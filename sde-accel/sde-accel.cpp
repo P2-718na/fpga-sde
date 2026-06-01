@@ -25,13 +25,9 @@ static void compute_jobs(
 
 COMPUTE_LOOP:
     for (int i = 0; i < num_jobs; i++) {
-
 #pragma HLS PIPELINE II=1
-
         Job j = job_stream.read();
-
         Result r;
-
         fixed_t sum = 0;
 
         for (int k = 0; k < NUM_INPUTS; k++) {

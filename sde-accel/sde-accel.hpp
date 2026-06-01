@@ -8,6 +8,7 @@
 #define NUM_OUTPUTS  4
 #define FIFO_DEPTH   64
 
+// Fixed point arithmetics
 typedef ap_fixed<32, 8> fixed_t;
 
 struct Job {

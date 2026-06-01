@@ -10,9 +10,7 @@ int main() {
     Job jobs[TEST_JOBS];
     Result results[TEST_JOBS];
 
-    // ------------------------------------------------
     // Generate test inputs
-    // ------------------------------------------------
     for (int i = 0; i < TEST_JOBS; i++) {
 
         for (int j = 0; j < NUM_INPUTS; j++) {
@@ -22,16 +20,11 @@ int main() {
         }
     }
 
-    // ------------------------------------------------
-    // Run DUT
-    // ------------------------------------------------
+    // Run
     accelerator(jobs, results, TEST_JOBS);
 
-    // ------------------------------------------------
     // Check outputs
-    // ------------------------------------------------
     int errors = 0;
-
     for (int i = 0; i < TEST_JOBS; i++) {
 
         fixed_t expected_sum = 0;
@@ -64,9 +57,7 @@ int main() {
         }
     }
 
-    // ------------------------------------------------
     // Final result
-    // ------------------------------------------------
     std::cout << std::endl;
 
     if (errors == 0) {
