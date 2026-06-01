@@ -1,3 +1,36 @@
+## VITIS IGNORE
+# Ignore build output directory
+/build
+/export
+
+# Ignore object files and dependent files
+.o
+.d
+
+#Ignore logs folder and log files
+/logs
+.log
+
+#Ignore lock files
+.lock
+
+.bin
+.pdi
+.vitisWorkspace.json
+
+_ide
+_ide/logs
+_ide/.wsdata
+*/.cache
+
+sde-accel/dfx_runtime.txt
+sde-accel/.cache
+sde-accel/.Xil
+sde-accel/compile_commands.json
+sde-accel/build
+########
+
+
 #it would be a shame to upload to git all the papers that I downloaded with exclusive access.
 #Hope I don't fuck up the next gitignore line owo
 !docs/papers
