@@ -1,7 +1,7 @@
 // tb_accelerator.cpp
 
 #include <iostream>
-#include "example.hpp"
+#include "sde-accel.hpp"
 
 #define TEST_JOBS 2
 

@@ -1,30 +1,73 @@
-#include "example.hpp"
+#include "sde-accel.hpp"
 
-static void compute_job(
-    fixed_t in[NUM_INPUTS],
-    fixed_t out[NUM_OUTPUTS]
+static void read_jobs(
+    Job* jobs,
+    hls::stream<Job>& job_stream,
+    int num_jobs
 ) {
 
-#pragma HLS INLINE
+READ_LOOP:
+    for (int i = 0; i < num_jobs; i++) {
 
-    fixed_t sum = 0;
+#pragma HLS PIPELINE II=1
 
-    // Parallel input accumulation
-    for (int i = 0; i < NUM_INPUTS; i++) {
-#pragma HLS UNROLL
-        sum += in[i];
+        Job j = jobs[i];
+
+        job_stream.write(j);
     }
+}
 
-    // Parallel output generation
-    for (int o = 0; o < NUM_OUTPUTS; o++) {
+static void compute_jobs(
+    hls::stream<Job>& job_stream,
+    hls::stream<Result>& result_stream,
+    int num_jobs
+) {
+
+COMPUTE_LOOP:
+    for (int i = 0; i < num_jobs; i++) {
+
+#pragma HLS PIPELINE II=1
+
+        Job j = job_stream.read();
+
+        Result r;
+
+        fixed_t sum = 0;
+
+        for (int k = 0; k < NUM_INPUTS; k++) {
 #pragma HLS UNROLL
-        out[o] = sum + o;
+            sum += j.in[k];
+        }
+
+        for (int k = 0; k < NUM_OUTPUTS; k++) {
+#pragma HLS UNROLL
+            r.out[k] = sum + k;
+        }
+
+        result_stream.write(r);
+    }
+}
+
+static void write_results(
+    Result* results,
+    hls::stream<Result>& result_stream,
+    int num_jobs
+) {
+
+WRITE_LOOP:
+    for (int i = 0; i < num_jobs; i++) {
+
+#pragma HLS PIPELINE II=1
+
+        Result r = result_stream.read();
+
+        results[i] = r;
     }
 }
 
 void accelerator(
-    fixed_t jobs[][NUM_INPUTS],
-    fixed_t results[][NUM_OUTPUTS],
+    Job* jobs,
+    Result* results,
     int num_jobs
 ) {
 
@@ -36,33 +79,17 @@ void accelerator(
 #pragma HLS INTERFACE s_axilite port=num_jobs
 #pragma HLS INTERFACE s_axilite port=return
 
-MAIN_LOOP:
-    for (int i = 0; i < num_jobs; i++) {
+#pragma HLS DATAFLOW
 
-#pragma HLS PIPELINE II=1
+    hls::stream<Job> job_stream;
+    hls::stream<Result> result_stream;
 
-#pragma HLS DEPENDENCE variable=jobs inter false
-#pragma HLS DEPENDENCE variable=results inter false
+#pragma HLS STREAM variable=job_stream depth=FIFO_DEPTH
+#pragma HLS STREAM variable=result_stream depth=FIFO_DEPTH
 
-        fixed_t in_local[NUM_INPUTS];
-        fixed_t out_local[NUM_OUTPUTS];
+    read_jobs(jobs, job_stream, num_jobs);
 
-#pragma HLS ARRAY_PARTITION variable=in_local complete
-#pragma HLS ARRAY_PARTITION variable=out_local complete
+    compute_jobs(job_stream, result_stream, num_jobs);
 
-        // Read inputs
-        for (int k = 0; k < NUM_INPUTS; k++) {
-#pragma HLS UNROLL
-            in_local[k] = jobs[i][k];
-        }
-
-        // Compute
-        compute_job(in_local, out_local);
-
-        // Write outputs
-        for (int k = 0; k < NUM_OUTPUTS; k++) {
-#pragma HLS UNROLL
-            results[i][k] = out_local[k];
-        }
-    }
+    write_results(results, result_stream, num_jobs);
 }
