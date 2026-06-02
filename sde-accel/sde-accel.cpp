@@ -61,8 +61,8 @@ void accelerator(
     int num_jobs
 )
 {
-#pragma HLS INTERFACE m_axi port=jobs    offset=slave bundle=gmem
-#pragma HLS INTERFACE m_axi port=results offset=slave bundle=gmem
+#pragma HLS INTERFACE m_axi port=jobs    offset=slave bundle=gmem0
+#pragma HLS INTERFACE m_axi port=results offset=slave bundle=gmem1
 
 #pragma HLS INTERFACE s_axilite port=jobs
 #pragma HLS INTERFACE s_axilite port=results
