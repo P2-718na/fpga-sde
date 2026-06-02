@@ -15,7 +15,10 @@ typedef ap_uint<128> ResultPacked;
 void accelerator(
     JobPacked* jobs,
     ResultPacked* results,
-    int num_jobs
+    int num_jobs,
+    fixed_t dt,
+    fixed_t a,
+    fixed_t e
 );
 
 #endif
