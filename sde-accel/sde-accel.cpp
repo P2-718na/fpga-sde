@@ -42,16 +42,16 @@ static void compute_job(
 {
 #pragma HLS INLINE
 
-    fixed_t sum = 0;
+    //fixed_t sum = 0;
 
     for(int i=0;i<NUM_INPUTS;i++) {
 #pragma HLS UNROLL
-        sum += in[i];
+       // sum += in[i];
     }
 
     for(int i=0;i<NUM_OUTPUTS;i++) {
 #pragma HLS UNROLL
-        out[i] = sum + i;
+        out[i] = in[i] + (fixed_t)1;
     }
 }
 
