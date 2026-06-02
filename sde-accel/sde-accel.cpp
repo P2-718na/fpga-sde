@@ -1,4 +1,4 @@
-#include "sde-accel.hpp"
+#include "accelerator.hpp"
 
 static void unpack_job(
     JobPacked packed,

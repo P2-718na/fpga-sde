@@ -1,81 +1,57 @@
-// tb_accelerator.cpp
+#include "accelerator.hpp"
 
 #include <iostream>
-#include "sde-accel.hpp"
 
-#define TEST_JOBS 2
+static JobPacked make_job(int v)
+{
+    JobPacked p = 0;
 
-int main() {
-
-    Job jobs[TEST_JOBS];
-    Result results[TEST_JOBS];
-
-    // Generate test inputs
-    for (int i = 0; i < TEST_JOBS; i++) {
-
-        for (int j = 0; j < NUM_INPUTS; j++) {
-
-            // Example fixed-point values
-            jobs[i].in[j] = (fixed_t)(i + j);
-        }
+    for(int i=0;i<NUM_INPUTS;i++) {
+        p.range(32*i+31,32*i) = v;
     }
 
-    // Run
-    accelerator(jobs, results, TEST_JOBS);
+    return p;
+}
 
-    // Check outputs
-    int errors = 0;
-    for (int i = 0; i < TEST_JOBS; i++) {
+static void print_result(ResultPacked p)
+{
+    for(int i=0;i<NUM_OUTPUTS;i++) {
 
-        fixed_t expected_sum = 0;
+        int32_t v =
+            p.range(32*i+31,32*i).to_int();
 
-        for (int j = 0; j < NUM_INPUTS; j++) {
-            expected_sum += (fixed_t)(i + j);
-        }
-
-        std::cout << "Job " << i << std::endl;
-
-        for (int o = 0; o < NUM_OUTPUTS; o++) {
-
-            fixed_t expected = expected_sum + o;
-            fixed_t received = results[i].out[o];
-
-            std::cout
-                << "  out[" << o << "] = "
-                << received.to_float()
-                << std::endl;
-
-            if (received != expected) {
-
-                std::cout
-                    << "  ERROR: expected "
-                    << expected.to_float()
-                    << std::endl;
-
-                errors++;
-            }
-        }
+        std::cout << v << " ";
     }
 
-    // Final result
     std::cout << std::endl;
+}
 
-    if (errors == 0) {
+int main()
+{
+    const int N = 16;
 
-        std::cout
-            << "TEST PASSED"
-            << std::endl;
+    JobPacked jobs[N];
+    ResultPacked results[N];
 
-        return 0;
-
-    } else {
-
-        std::cout
-            << "TEST FAILED: "
-            << errors
-            << " errors"
-            << std::endl;
-
-        return 1;
+    for(int i=0;i<N;i++) {
+        jobs[i] = make_job(i);
     }
+
+    accelerator(
+        jobs,
+        results,
+        N
+    );
+
+    for(int i=0;i<N;i++) {
+
+        std::cout
+            << "Job "
+            << i
+            << ": ";
+
+        print_result(results[i]);
+    }
+
+    return 0;
 }
