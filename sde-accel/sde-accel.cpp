@@ -74,6 +74,10 @@ void accelerator(
     fixed_t a,
     fixed_t inv_e
 ) {
+
+    // TODO CHECK BURST SIZE
+
+    
 #pragma HLS INTERFACE m_axi port=jobs    offset=slave bundle=gmem0
 #pragma HLS INTERFACE m_axi port=results offset=slave bundle=gmem1
 
