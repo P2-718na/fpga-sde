@@ -4,12 +4,15 @@
 #include <ap_fixed.h>
 #include <ap_int.h>
 
-#define NUM_INPUTS  6
+// Inputs are u, du, v, dv and I for each neuron (job)
+// Outputs are just u, du, v, dv
+#define NUM_INPUTS  5
 #define NUM_OUTPUTS 4
 
 typedef ap_fixed<32,8> fixed_t;
 
-typedef ap_uint<256> JobPacked;
+// HP ports have bandwidth of 64; no need to pad to 256
+typedef ap_uint<192> JobPacked;
 typedef ap_uint<128> ResultPacked;
 
 void accelerator(
