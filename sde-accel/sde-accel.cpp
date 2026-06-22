@@ -89,6 +89,7 @@ static void compute_job(
 
     const fixed_t du = (u - u*u*u/(fixed_t)3 - v + I) * inv_e;
     const fixed_t dv = u + a;
+    // FIXME qui non sto dividendo per epsilon. Per ora il fix è cambiare la temperatura lato python
     const fixed_t noise = sigma_sqrt_dt * gaussian_clt(rng_state);
 
     out[0] = u + du * dt + noise;
