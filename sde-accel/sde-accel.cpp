@@ -1,6 +1,7 @@
 #include "accelerator.hpp"
 
 static void unpack_job(JobPacked packed, fixed_t in[NUM_INPUTS]) {
+UNPACK:
 // We inline since this is essentially just an abstraction layer    
 #pragma HLS INLINE
 
@@ -15,6 +16,7 @@ static void unpack_job(JobPacked packed, fixed_t in[NUM_INPUTS]) {
 }
 
 static ResultPacked pack_result(fixed_t out[NUM_OUTPUTS]) {
+PACK:
 // Again, inline since this is just an abstraction.
 #pragma HLS INLINE
 
@@ -81,15 +83,16 @@ static void compute_job(
     ap_uint<32> rng_state[GAUSS_UNIFORMS]
 )
 {
+COMPUTE:
 #pragma HLS INLINE
-
     const fixed_t u = in[0];
     const fixed_t v = in[1];
     const fixed_t I = in[2];
 
-    const fixed_t du = (u - u*u*u/(fixed_t)3 - v + I) * inv_e;
+    const fixed_t du = (u - u*u*u*(fixed_t)(1/3) - v + I) * inv_e;
     const fixed_t dv = u + a;
-    // FIXME qui non sto dividendo per epsilon. Per ora il fix è cambiare la temperatura lato python
+    // Qui non sto dividendo per epsilon per salvare risorse.
+    // La temperatura lato python deve contenere il fattore giusto.
     const fixed_t noise = sigma_sqrt_dt * gaussian_clt(rng_state);
 
     out[0] = u + du * dt + noise;
