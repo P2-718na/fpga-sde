@@ -43,9 +43,8 @@ static fixed_t gaussian_clt(ap_uint<32> rng_state[GAUSS_UNIFORMS]) {
 }
 
 static void compute_job(
-    const State& in,
+    State& s,
     fixed_t I,
-    State& out,
     fixed_t dt,
     fixed_t a,
     fixed_t inv_e,
@@ -55,8 +54,8 @@ static void compute_job(
 {
 #pragma HLS INLINE
 
-    const fixed_t u = in.u;
-    const fixed_t v = in.v;
+    const fixed_t u = s.u;
+    const fixed_t v = s.v;
 
     const fixed_t du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * inv_e;
     const fixed_t dv = u + a;
@@ -64,12 +63,12 @@ static void compute_job(
     // La temperatura lato python deve contenere il fattore giusto.
     const fixed_t noise = sigma_sqrt_dt * gaussian_clt(rng_state);
     
-    out.u = u + du * dt + noise;
-    out.v = v + dv * dt;
+    s.u = u + du * dt + noise;
+    s.v = v + dv * dt;
 }
 
 void accelerator(
-    State* state,
+    StateBits* state,
     fixed_t* I,
     int num_jobs,
     fixed_t dt,
@@ -129,26 +128,23 @@ void accelerator(
 MAIN_LOOP:
     for(int i = 0; i < num_jobs; ++i)
     {
-#pragma HLS PIPELINE II=1
+    #pragma HLS PIPELINE II=1
 
-        State current;
-        State next;
+        PackedState s;
 
-#pragma HLS ARRAY_PARTITION variable=current complete
-#pragma HLS ARRAY_PARTITION variable=next complete
-
-        current = state[i];
+        // One 64-bit AXI read
+        s.bits = state[i];
 
         compute_job(
-            current,
+            s.state,
             I[i],
-            next,
             dt,
             a,
             inv_e,
             sigma_sqrt_dt,
             rng_state);
 
-        state[i] = next;
+        // One 64-bit AXI write
+        state[i] = s.bits;
     }
 }

@@ -1,0 +1,66 @@
+{
+  "0": {
+    "basicblocks": 67,
+    "calls": "2",
+    "control_depth": 1,
+    "def_use_depth": 4,
+    "file": "network-accel.cpp",
+    "fileloc": 67,
+    "instructions": 521,
+    "loads": {
+      "G": 13,
+      "L": 10,
+      "T": 4
+    },
+    "memory_accesses": 22,
+    "name": "accelerator_net",
+    "stores": {
+      "G": 18,
+      "L": 8,
+      "T": 2
+    },
+    "total_instructions": 5912
+  },
+  "1": {
+    "basicblocks": 1,
+    "calls": "3",
+    "control_depth": 0,
+    "def_use_depth": 1,
+    "file": "network-accel.cpp",
+    "fileloc": 34,
+    "instructions": 29,
+    "memory_accesses": 0,
+    "name": "uniform01",
+    "total_instructions": 322
+  },
+  "2": {
+    "basicblocks": 7,
+    "calls": "1",
+    "control_depth": 1,
+    "def_use_depth": 2,
+    "file": "network-accel.cpp",
+    "fileloc": 46,
+    "instructions": 57,
+    "memory_accesses": 2,
+    "name": "gaussian_clt",
+    "total_instructions": 1431
+  },
+  "3": {
+    "basicblocks": 1,
+    "calls": "",
+    "control_depth": 0,
+    "def_use_depth": 1,
+    "file": "network-accel.cpp",
+    "fileloc": 23,
+    "instructions": 33,
+    "loads": {
+      "L": 1
+    },
+    "memory_accesses": 0,
+    "name": "xorshift32",
+    "stores": {
+      "L": 1
+    },
+    "total_instructions": 174
+  }
+}

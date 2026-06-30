@@ -23,12 +23,23 @@ struct State {
     fixed_t v;
 };
 
-// Make sure we are correcyly packing to 64 bit words.
+typedef ap_uint<64> StateBits;
+
 // Writing it this way avoids the ugly pack-unpack functions
-static_assert(sizeof(State) == 8);
+union PackedState {
+    State state;
+    StateBits bits;
+};
+
+typedef ap_uint<64> StateBits;
+
+// Make sure we are correcyly packing to 64 bit words.
+static_assert(sizeof(State) == 8, "State must be exactly 64 bits");
+static_assert(sizeof(PackedState) == 8, "PackedState must be exactly 64 bits");
+
 
 void accelerator(
-    State* state,
+    StateBits* state,
     fixed_t* I,
     int num_jobs,
     fixed_t dt,

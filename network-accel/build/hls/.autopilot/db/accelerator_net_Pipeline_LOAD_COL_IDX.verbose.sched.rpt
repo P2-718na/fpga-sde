@@ -1,0 +1,238 @@
+
+
+================================================================
+== Vitis HLS Report for 'accelerator_net_Pipeline_LOAD_COL_IDX'
+================================================================
+* Date:           Tue Jun 30 17:54:46 2026
+
+* Version:        2025.2 (Build 6295257 on Nov 14 2025)
+* Project:        build
+* Solution:       hls (Vivado IP Flow Target)
+* Product family: zynq
+* Target device:  xc7z020-clg400-1
+
+
+================================================================
+== Performance Estimates
+================================================================
++ Timing: 
+    * Summary: 
+    +--------+----------+----------+------------+
+    |  Clock |  Target  | Estimated| Uncertainty|
+    +--------+----------+----------+------------+
+    |ap_clk  |  10.00 ns|  7.300 ns|     2.70 ns|
+    +--------+----------+----------+------------+
+
++ Latency: 
+    * Summary: 
+    +---------+---------+----------+----------+-----+-----+-------------------+
+    |  Latency (cycles) |  Latency (absolute) |  Interval |      Pipeline     |
+    |   min   |   max   |    min   |    max   | min | max |        Type       |
+    +---------+---------+----------+----------+-----+-----+-------------------+
+    |        ?|        ?|         ?|         ?|    0|    0|  loop pipeline stp|
+    +---------+---------+----------+----------+-----+-----+-------------------+
+
+    + Detail: 
+        * Instance: 
+        N/A
+
+        * Loop: 
+        +----------------+---------+---------+----------+-----------+-----------+------+----------+
+        |                |  Latency (cycles) | Iteration|  Initiation Interval  | Trip |          |
+        |    Loop Name   |   min   |   max   |  Latency |  achieved |   target  | Count| Pipelined|
+        +----------------+---------+---------+----------+-----------+-----------+------+----------+
+        |- LOAD_COL_IDX  |        ?|        ?|        12|          1|          1|     ?|       yes|
+        +----------------+---------+---------+----------+-----------+-----------+------+----------+
+
+============================================================
++ Verbose Summary: Synthesis Manager
+============================================================
+InlineROM: 1
+ExposeGlobal: 0
+============================================================
++ Verbose Summary: CDFG Model
+============================================================
+IsTopModel: 0
+ResetActiveHigh: 1
+IsCombinational: 0
+IsDatapathOnly: 0
+HasWiredReturn: 1
+HasMFsm: 2
+HasVarLatency: 1
+IsPipeline: 0
+IsRtlPipelined: 0
+IsInstanceOverlapped: 0
+IsDontTouch: 0
+HasImplIP: 0
+IsGatedGlobalClock: 0
+
++ Individual pipeline summary: 
+  * Pipeline-0: initiation interval (II) = 1, depth = 12
+
+
+============================================================
++ Verbose Summary: Schedule
+============================================================
+* Number of FSM states : 12
+* Pipeline : 1
+  Pipeline-0 : II = 1, D = 12, States = { 1 2 3 4 5 6 7 8 9 10 11 12 }
+* Dataflow Pipeline: 0
+
+* FSM state transitions: 
+1 --> 2 
+2 --> 3 
+3 --> 4 
+4 --> 5 
+5 --> 6 
+6 --> 7 
+7 --> 8 
+8 --> 9 
+9 --> 10 
+10 --> 11 
+11 --> 12 
+12 --> 
+
+* FSM state operations: 
+
+State 1 <SV = 0> <Delay = 5.72>
+ST_1 : Operation 15 [1/1] (0.00ns)   --->   "%i_3 = alloca i32 1" [network-accel.cpp:171]   --->   Operation 15 'alloca' 'i_3' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 16 [1/1] (0.00ns)   --->   "%specinterface_ln0 = specinterface void @_ssdm_op_SpecInterface, i32 %gmem0, void @empty_31, i32 0, i32 0, void @empty_32, i32 0, i32 0, void @empty, void @empty_0, void @empty_32, i32 16, i32 16, i32 16, i32 16, void @empty_32, void @empty_32, i32 4294967295, i32 0, i32 0, i32 4"   --->   Operation 16 'specinterface' 'specinterface_ln0' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 17 [1/1] (0.00ns)   --->   "%col_idx_ddr_read = read i64 @_ssdm_op_Read.ap_auto.i64, i64 %col_idx_ddr"   --->   Operation 17 'read' 'col_idx_ddr_read' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 18 [1/1] (0.00ns)   --->   "%edge_count_read = read i32 @_ssdm_op_Read.ap_auto.i32, i32 %edge_count"   --->   Operation 18 'read' 'edge_count_read' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 19 [1/1] (1.58ns)   --->   "%store_ln171 = store i16 0, i16 %i_3" [network-accel.cpp:171]   --->   Operation 19 'store' 'store_ln171' <Predicate = true> <Delay = 1.58>
+ST_1 : Operation 20 [1/1] (0.00ns)   --->   "%br_ln0 = br void %for.inc27"   --->   Operation 20 'br' 'br_ln0' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 21 [1/1] (0.00ns)   --->   "%i = load i16 %i_3" [network-accel.cpp:171]   --->   Operation 21 'load' 'i' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 22 [1/1] (0.00ns)   --->   "%specbitsmap_ln0 = specbitsmap void @_ssdm_op_SpecBitsMap, i32 %gmem0"   --->   Operation 22 'specbitsmap' 'specbitsmap_ln0' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 23 [1/1] (0.00ns)   --->   "%zext_ln171_1 = zext i16 %i" [network-accel.cpp:171]   --->   Operation 23 'zext' 'zext_ln171_1' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 24 [1/1] (2.55ns)   --->   "%icmp_ln171 = icmp_slt  i32 %zext_ln171_1, i32 %edge_count_read" [network-accel.cpp:171]   --->   Operation 24 'icmp' 'icmp_ln171' <Predicate = true> <Delay = 2.55> <CoreInst = "Cmp">   --->   Core 9 'Cmp' <Latency = 0> <II = 1> <Delay = 2.55> <FuncUnit> <Opcode : 'seteq' 'setne' 'setle' 'setge' 'setlt' 'setgt'> <InPorts = 2> <OutPorts = 1>
+ST_1 : Operation 25 [1/1] (2.07ns)   --->   "%add_ln171 = add i16 %i, i16 1" [network-accel.cpp:171]   --->   Operation 25 'add' 'add_ln171' <Predicate = true> <Delay = 2.07> <CoreInst = "Adder">   --->   Core 1 'Adder' <Latency = 0> <II = 1> <Delay = 2.07> <FuncUnit> <Opcode : 'add' 'sub'> <InPorts = 2> <OutPorts = 1>
+ST_1 : Operation 26 [1/1] (0.00ns)   --->   "%br_ln171 = br i1 %icmp_ln171, void %for.inc41.preheader.exitStub, void %for.inc27.split" [network-accel.cpp:171]   --->   Operation 26 'br' 'br_ln171' <Predicate = true> <Delay = 0.00>
+ST_1 : Operation 27 [1/1] (0.00ns) (grouped into LUT with out node add_ln174)   --->   "%shl_ln174 = shl i16 %i, i16 1" [network-accel.cpp:174]   --->   Operation 27 'shl' 'shl_ln174' <Predicate = (icmp_ln171)> <Delay = 0.00>
+ST_1 : Operation 28 [1/1] (0.00ns) (grouped into LUT with out node add_ln174)   --->   "%zext_ln174 = zext i16 %shl_ln174" [network-accel.cpp:174]   --->   Operation 28 'zext' 'zext_ln174' <Predicate = (icmp_ln171)> <Delay = 0.00>
+ST_1 : Operation 29 [1/1] (3.52ns) (out node of the LUT)   --->   "%add_ln174 = add i64 %zext_ln174, i64 %col_idx_ddr_read" [network-accel.cpp:174]   --->   Operation 29 'add' 'add_ln174' <Predicate = (icmp_ln171)> <Delay = 3.52> <CoreInst = "Adder">   --->   Core 1 'Adder' <Latency = 0> <II = 1> <Delay = 3.52> <FuncUnit> <Opcode : 'add' 'sub'> <InPorts = 2> <OutPorts = 1>
+ST_1 : Operation 30 [1/1] (0.00ns)   --->   "%trunc_ln174_2 = partselect i62 @_ssdm_op_PartSelect.i62.i64.i32.i32, i64 %add_ln174, i32 2, i32 63" [network-accel.cpp:174]   --->   Operation 30 'partselect' 'trunc_ln174_2' <Predicate = (icmp_ln171)> <Delay = 0.00>
+ST_1 : Operation 31 [1/1] (0.00ns)   --->   "%sext_ln174 = sext i62 %trunc_ln174_2" [network-accel.cpp:174]   --->   Operation 31 'sext' 'sext_ln174' <Predicate = (icmp_ln171)> <Delay = 0.00>
+ST_1 : Operation 32 [1/1] (0.00ns)   --->   "%gmem0_addr = getelementptr i32 %gmem0, i64 %sext_ln174" [network-accel.cpp:174]   --->   Operation 32 'getelementptr' 'gmem0_addr' <Predicate = (icmp_ln171)> <Delay = 0.00>
+ST_1 : Operation 33 [1/1] (0.00ns)   --->   "%trunc_ln174 = trunc i64 %add_ln174" [network-accel.cpp:174]   --->   Operation 33 'trunc' 'trunc_ln174' <Predicate = (icmp_ln171)> <Delay = 0.00>
+ST_1 : Operation 34 [1/1] (1.58ns)   --->   "%store_ln171 = store i16 %add_ln171, i16 %i_3" [network-accel.cpp:171]   --->   Operation 34 'store' 'store_ln171' <Predicate = (icmp_ln171)> <Delay = 1.58>
+
+State 2 <SV = 1> <Delay = 0.00>
+ST_2 : Operation 35 [8/8] (7.30ns)   --->   "%gmem0_load_req = readreq i1 @_ssdm_op_ReadReq.m_axi.i32P1A, i32 %gmem0_addr, i64 1" [network-accel.cpp:174]   --->   Operation 35 'readreq' 'gmem0_load_req' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 6> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 3 <SV = 2> <Delay = 0.00>
+ST_3 : Operation 36 [7/8] (7.30ns)   --->   "%gmem0_load_req = readreq i1 @_ssdm_op_ReadReq.m_axi.i32P1A, i32 %gmem0_addr, i64 1" [network-accel.cpp:174]   --->   Operation 36 'readreq' 'gmem0_load_req' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 6> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 4 <SV = 3> <Delay = 0.00>
+ST_4 : Operation 37 [6/8] (7.30ns)   --->   "%gmem0_load_req = readreq i1 @_ssdm_op_ReadReq.m_axi.i32P1A, i32 %gmem0_addr, i64 1" [network-accel.cpp:174]   --->   Operation 37 'readreq' 'gmem0_load_req' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 6> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 5 <SV = 4> <Delay = 0.00>
+ST_5 : Operation 38 [5/8] (7.30ns)   --->   "%gmem0_load_req = readreq i1 @_ssdm_op_ReadReq.m_axi.i32P1A, i32 %gmem0_addr, i64 1" [network-accel.cpp:174]   --->   Operation 38 'readreq' 'gmem0_load_req' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 6> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 6 <SV = 5> <Delay = 0.00>
+ST_6 : Operation 39 [4/8] (7.30ns)   --->   "%gmem0_load_req = readreq i1 @_ssdm_op_ReadReq.m_axi.i32P1A, i32 %gmem0_addr, i64 1" [network-accel.cpp:174]   --->   Operation 39 'readreq' 'gmem0_load_req' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 6> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 7 <SV = 6> <Delay = 0.00>
+ST_7 : Operation 40 [3/8] (7.30ns)   --->   "%gmem0_load_req = readreq i1 @_ssdm_op_ReadReq.m_axi.i32P1A, i32 %gmem0_addr, i64 1" [network-accel.cpp:174]   --->   Operation 40 'readreq' 'gmem0_load_req' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 6> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 8 <SV = 7> <Delay = 0.00>
+ST_8 : Operation 41 [2/8] (7.30ns)   --->   "%gmem0_load_req = readreq i1 @_ssdm_op_ReadReq.m_axi.i32P1A, i32 %gmem0_addr, i64 1" [network-accel.cpp:174]   --->   Operation 41 'readreq' 'gmem0_load_req' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 6> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 9 <SV = 8> <Delay = 7.30>
+ST_9 : Operation 42 [1/8] ( I:7.30ns O:7.30ns )   --->   "%gmem0_load_req = readreq i1 @_ssdm_op_ReadReq.m_axi.i32P1A, i32 %gmem0_addr, i64 1" [network-accel.cpp:174]   --->   Operation 42 'readreq' 'gmem0_load_req' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 6> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 10 <SV = 9> <Delay = 7.30>
+ST_10 : Operation 43 [1/1] ( I:7.30ns O:7.30ns )   --->   "%gmem0_addr_read = read i32 @_ssdm_op_Read.m_axi.i32P1A, i32 %gmem0_addr" [network-accel.cpp:174]   --->   Operation 43 'read' 'gmem0_addr_read' <Predicate = true> <Delay = 7.30> <CoreInst = "m_axi">   --->   Core 111 'm_axi' <Latency = 3> <II = 1> <Delay = 1.00> <Adapter> <Opcode : 'readrequnaligned' 'writerequnaligned' 'read' 'write' 'readreq' 'writereq' 'writeresp'>
+
+State 11 <SV = 10> <Delay = 4.42>
+ST_11 : Operation 44 [1/1] (0.00ns)   --->   "%shl_ln174_1 = bitconcatenate i5 @_ssdm_op_BitConcatenate.i5.i2.i3, i2 %trunc_ln174, i3 0" [network-accel.cpp:174]   --->   Operation 44 'bitconcatenate' 'shl_ln174_1' <Predicate = true> <Delay = 0.00>
+ST_11 : Operation 45 [1/1] (0.00ns)   --->   "%zext_ln174_1 = zext i5 %shl_ln174_1" [network-accel.cpp:174]   --->   Operation 45 'zext' 'zext_ln174_1' <Predicate = true> <Delay = 0.00>
+ST_11 : Operation 46 [1/1] (4.42ns)   --->   "%lshr_ln174 = lshr i32 %gmem0_addr_read, i32 %zext_ln174_1" [network-accel.cpp:174]   --->   Operation 46 'lshr' 'lshr_ln174' <Predicate = true> <Delay = 4.42> <CoreInst = "Shifter">   --->   Core 75 'Shifter' <Latency = 0> <II = 1> <Delay = 4.42> <FuncUnit> <Opcode : 'shl' 'lshr' 'ashr'> <InPorts = 2> <OutPorts = 1>
+ST_11 : Operation 47 [1/1] (0.00ns)   --->   "%trunc_ln174_1 = trunc i32 %lshr_ln174" [network-accel.cpp:174]   --->   Operation 47 'trunc' 'trunc_ln174_1' <Predicate = true> <Delay = 0.00>
+ST_11 : Operation 54 [1/1] (1.58ns)   --->   "%ret_ln0 = ret"   --->   Operation 54 'ret' 'ret_ln0' <Predicate = (!icmp_ln171)> <Delay = 1.58>
+
+State 12 <SV = 11> <Delay = 3.25>
+ST_12 : Operation 48 [1/1] (0.00ns)   --->   "%zext_ln171 = zext i16 %i" [network-accel.cpp:171]   --->   Operation 48 'zext' 'zext_ln171' <Predicate = true> <Delay = 0.00>
+ST_12 : Operation 49 [1/1] (0.00ns)   --->   "%specpipeline_ln173 = specpipeline void @_ssdm_op_SpecPipeline, i32 1, i32 0, i32 0, i32 0, i32 4294967295, void @empty_32" [network-accel.cpp:173]   --->   Operation 49 'specpipeline' 'specpipeline_ln173' <Predicate = true> <Delay = 0.00>
+ST_12 : Operation 50 [1/1] (0.00ns)   --->   "%specloopname_ln171 = specloopname void @_ssdm_op_SpecLoopName, void @empty_23" [network-accel.cpp:171]   --->   Operation 50 'specloopname' 'specloopname_ln171' <Predicate = true> <Delay = 0.00>
+ST_12 : Operation 51 [1/1] (0.00ns)   --->   "%col_idx_addr = getelementptr i11 %col_idx, i64 0, i64 %zext_ln171" [network-accel.cpp:174]   --->   Operation 51 'getelementptr' 'col_idx_addr' <Predicate = true> <Delay = 0.00>
+ST_12 : Operation 52 [1/1] ( I:3.25ns O:3.25ns )   --->   "%store_ln174 = store i11 %trunc_ln174_1, i15 %col_idx_addr" [network-accel.cpp:174]   --->   Operation 52 'store' 'store_ln174' <Predicate = true> <Delay = 3.25> <CoreInst = "RAM">   --->   Core 81 'RAM' <Latency = 1> <II = 1> <Delay = 3.25> <Storage> <Opcode : 'load' 'store'> <Ports = 2> <Width = 11> <Depth = 32768> <RAM>
+ST_12 : Operation 53 [1/1] (0.00ns)   --->   "%br_ln171 = br void %for.inc27" [network-accel.cpp:171]   --->   Operation 53 'br' 'br_ln171' <Predicate = true> <Delay = 0.00>
+
+
+============================================================
++ Verbose Summary: Timing violations
+============================================================
+Target clock period: 10.000ns, clock uncertainty: 2.700ns.
+
+ <State 1>: 5.728ns
+The critical path consists of the following:
+	'store' operation ('store_ln171', network-accel.cpp:171) of constant 0 16 bit on local variable 'i', network-accel.cpp:171 [9]  (1.588 ns)
+	'load' operation 16 bit ('i', network-accel.cpp:171) on local variable 'i', network-accel.cpp:171 [12]  (0.000 ns)
+	'icmp' operation 1 bit ('icmp_ln171', network-accel.cpp:171) [15]  (2.552 ns)
+	'store' operation ('store_ln171', network-accel.cpp:171) of variable 'add_ln171', network-accel.cpp:171 16 bit on local variable 'i', network-accel.cpp:171 [37]  (1.588 ns)
+
+ <State 2>: 0.000ns
+The critical path consists of the following:
+
+ <State 3>: 0.000ns
+The critical path consists of the following:
+
+ <State 4>: 0.000ns
+The critical path consists of the following:
+
+ <State 5>: 0.000ns
+The critical path consists of the following:
+
+ <State 6>: 0.000ns
+The critical path consists of the following:
+
+ <State 7>: 0.000ns
+The critical path consists of the following:
+
+ <State 8>: 0.000ns
+The critical path consists of the following:
+
+ <State 9>: 7.300ns
+The critical path consists of the following:
+	bus request operation ('gmem0_load_req', network-accel.cpp:174) on port 'gmem0' (network-accel.cpp:174) [28]  (7.300 ns)
+
+ <State 10>: 7.300ns
+The critical path consists of the following:
+	bus read operation ('gmem0_addr_read', network-accel.cpp:174) on port 'gmem0' (network-accel.cpp:174) [29]  (7.300 ns)
+
+ <State 11>: 4.420ns
+The critical path consists of the following:
+	'lshr' operation 32 bit ('lshr_ln174', network-accel.cpp:174) [33]  (4.420 ns)
+
+ <State 12>: 3.254ns
+The critical path consists of the following:
+	'getelementptr' operation 15 bit ('col_idx_addr', network-accel.cpp:174) [35]  (0.000 ns)
+	'store' operation ('store_ln174', network-accel.cpp:174) of variable 'trunc_ln174_1', network-accel.cpp:174 11 bit on array 'col_idx' [36]  (3.254 ns)
+
+
+============================================================
++ Verbose Summary: Binding
+============================================================
+N/A
+* FSMD analyzer results:
+  - Output states:
+ - Input state : 
+  - Chain level:
+	State 1
+	State 2
+	State 3
+	State 4
+	State 5
+	State 6
+	State 7
+	State 8
+	State 9
+	State 10
+	State 11
+	State 12
+
+
+============================================================
++ Verbose Summary: Datapath Resource usage 
+============================================================
+N/A

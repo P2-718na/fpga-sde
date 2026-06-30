@@ -1,0 +1,157 @@
+<ENTRY>
+{
+ "thisFile": "C:/Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel\\build\\build.hlsrun_csim_summary",
+ "connectId": "",
+ "serverToken": "",
+ "timestamp": "0"
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_CmdStep",
+ "dateTimestamp": "06/22/26 17:47:25",
+ "timestampMillis": "1782143245377",
+ "buildStep": {
+  "cmdId": "1cf3d5e9-fb43-415a-a279-860284b87fc4",
+  "name": "vitis-run",
+  "logFile": "C:/Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel\\build\\logs\\build.steps.log",
+  "commandLine": "C:/AMDDesignTools/2025.2/Vitis/bin/unwrapped/win64.o/vitis-run.exe  --mode hls --csim --config C:\\Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel\\hls_config.cfg --work_dir build ",
+  "args": [
+   "--mode",
+   "hls",
+   "--csim",
+   "--config",
+   "C:\\Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel\\hls_config.cfg",
+   "--work_dir",
+   "build"
+  ],
+  "iniFiles": [],
+  "cwd": "C:\\Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "06/22/26 17:47:25",
+ "timestampMillis": "1782143245377",
+ "status": {
+  "cmdId": "1cf3d5e9-fb43-415a-a279-860284b87fc4",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_FlowMetaData",
+ "dateTimestamp": "06/22/26 17:47:33",
+ "timestampMillis": "1782143253149",
+ "buildSummary": {
+  "hardwarePlatform": "",
+  "hardwareDsa": "",
+  "platformDirectory": "",
+  "runtime": "",
+  "systemConfig": "",
+  "flow": "BF_RUN",
+  "target": "TT_HLS_C_SIM",
+  "kernels": [
+   {
+    "base": {
+     "type": "KERNEL",
+     "name": "accelerator_net",
+     "file": "",
+     "reports": [],
+     "uuid": ""
+    },
+    "sources": [
+     "C:/Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel\\accelerator.hpp",
+     "C:/Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel\\network-accel.cpp"
+    ],
+    "psSources": [],
+    "cuNames": [],
+    "type": "HLS",
+    "frequency": 0,
+    "freqUnits": ""
+   }
+  ],
+  "toolVersion": "2025.2"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_SubCmdStep",
+ "dateTimestamp": "06/22/26 17:47:33",
+ "timestampMillis": "1782143253151",
+ "buildStep": {
+  "cmdId": "612904bd-e2f0-4d1a-8cbf-be6e5ec5ad6a",
+  "name": "",
+  "logFile": "C:/Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel\\build\\hls\\hls.log",
+  "commandLine": "",
+  "args": [],
+  "iniFiles": [],
+  "cwd": "C:\\Users\\Matteo\\Desktop\\repo\\master-thesis\\fpga-sde\\network-accel"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "06/22/26 17:47:33",
+ "timestampMillis": "1782143253152",
+ "status": {
+  "cmdId": "612904bd-e2f0-4d1a-8cbf-be6e5ec5ad6a",
+  "state": "CS_RUNNING"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "06/22/26 17:47:45",
+ "timestampMillis": "1782143265974",
+ "status": {
+  "cmdId": "612904bd-e2f0-4d1a-8cbf-be6e5ec5ad6a",
+  "state": "CS_PASSED"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Status",
+ "dateTimestamp": "06/22/26 17:47:46",
+ "timestampMillis": "1782143266124",
+ "status": {
+  "cmdId": "1cf3d5e9-fb43-415a-a279-860284b87fc4",
+  "state": "CS_PASSED"
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Report",
+ "dateTimestamp": "06/22/26 17:47:46",
+ "timestampMillis": "1782143266125",
+ "report": {
+  "path": "",
+  "name": "",
+  "fileType": "HTML",
+  "reportType": "GLOBAL_RULECHECK_GUIDANCE",
+  "cmdId": ""
+ }
+}
+</ENTRY>
+<ENTRY>
+{
+ "type": "ET_Report",
+ "dateTimestamp": "06/22/26 17:47:46",
+ "timestampMillis": "1782143266126",
+ "report": {
+  "path": "",
+  "name": "",
+  "fileType": "BINARY_PROTOBUF",
+  "reportType": "GLOBAL_RULECHECK_GUIDANCE",
+  "cmdId": ""
+ }
+}
+</ENTRY>
