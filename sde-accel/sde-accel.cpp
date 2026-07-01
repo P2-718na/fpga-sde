@@ -68,8 +68,9 @@ static void compute_job(
 }
 
 void accelerator(
-    StateBits* state,
-    fixed_t* I,
+    const StateBits* state_in,
+    const fixed_t* I,
+    StateBits* state_out,
     int num_jobs,
     fixed_t dt,
     fixed_t a,
@@ -80,12 +81,12 @@ void accelerator(
 )
 {
 // Make sure the packing is happening for state
-#pragma HLS aggregate variable=state
-    
-#pragma HLS INTERFACE m_axi port=state offset=slave bundle=gmem0 // num_read_outstanding=16 num_write_outstanding=16 didn't help with II2
-#pragma HLS INTERFACE m_axi port=I     offset=slave bundle=gmem1
+#pragma HLS INTERFACE m_axi port=state_in  offset=slave bundle=gmem0
+#pragma HLS INTERFACE m_axi port=I         offset=slave bundle=gmem1
+#pragma HLS INTERFACE m_axi port=state_out offset=slave bundle=gmem2
 
-#pragma HLS INTERFACE s_axilite port=state 
+#pragma HLS INTERFACE s_axilite port=state_in
+#pragma HLS INTERFACE s_axilite port=state_out
 #pragma HLS INTERFACE s_axilite port=I
 #pragma HLS INTERFACE s_axilite port=num_jobs
 
@@ -123,7 +124,8 @@ void accelerator(
     }
 
 // Tell vitis that processing for all inputs can be done independently
-#pragma HLS DEPENDENCE variable=state inter false
+#pragma HLS DEPENDENCE variable=state_in inter false
+#pragma HLS DEPENDENCE variable=state_out inter false
 
 MAIN_LOOP:
     for(int i = 0; i < num_jobs; ++i)
@@ -132,8 +134,7 @@ MAIN_LOOP:
 
         PackedState s;
 
-        // One 64-bit AXI read
-        s.bits = state[i];
+        s.bits = state_in[i];
 
         compute_job(
             s.state,
@@ -144,7 +145,6 @@ MAIN_LOOP:
             sigma_sqrt_dt,
             rng_state);
 
-        // One 64-bit AXI write
-        state[i] = s.bits;
+        state_out[i] = s.bits;
     }
 }

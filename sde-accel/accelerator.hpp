@@ -39,8 +39,9 @@ static_assert(sizeof(PackedState) == 8, "PackedState must be exactly 64 bits");
 
 
 void accelerator(
-    StateBits* state,
-    fixed_t* I,
+    const StateBits* state_in,
+    const fixed_t* I,
+    StateBits* state_out,
     int num_jobs,
     fixed_t dt,
     fixed_t a,
