@@ -107,11 +107,28 @@ NEURON_LOOP:
     }
 }
 
+static void compute_outgoing(
+    const State state_cur[MAX_NEURONS],
+    const NeuronIndex out_degrees[MAX_NEURONS],
+    int neuron_count,
+    hls::stream<fixed_t>& out_stream
+) {
+NEURON_LOOP:
+    for (int n = 0; n < neuron_count; ++n) {
+#pragma HLS PIPELINE II=1
+
+        fixed_t term =
+            (fixed_t)out_degrees[n] * state_cur[n].u;
+
+        out_stream.write(term);
+    }
+}
+
 static void compute_flows(
     const State state_cur[MAX_NEURONS],
     const EdgeBits* edge_list,
-    const NeuronIndex out_degrees[MAX_NEURONS],
     int edge_count,
+    hls::stream<fixed_t>& out_stream,
     hls::stream<fixed_t>& I_stream
 ) {
     fixed_t incoming_sum = 0;
@@ -123,20 +140,14 @@ EDGE_LOOP:
         PackedEdge pe;
         pe.bits = edge_list[e];
 
-        const Edge edge = pe.edge;
+        Edge edge = pe.edge;
 
-        // w_nm means m -> n, so this is:
-        // sum_m w_nm * u_m
         incoming_sum += state_cur[edge.from].u;
 
         if (edge.last) {
-            const NeuronIndex n = edge.to;
+            fixed_t outgoing_term = out_stream.read();
 
-            const fixed_t outgoing_term =
-                (fixed_t)out_degrees[n]
-                * state_cur[n].u;
-
-            const fixed_t I =
+            fixed_t I =
                 incoming_sum - outgoing_term;
 
             I_stream.write(I);
@@ -163,13 +174,22 @@ static void timestep(
 #pragma HLS DATAFLOW
 
     hls::stream<fixed_t> I_stream;
-#pragma HLS STREAM variable=I_stream depth=16
+    #pragma HLS STREAM variable=I_stream depth=16
+    hls::stream<fixed_t> out_stream;
+    #pragma HLS STREAM variable=out_stream depth=16
+
+    compute_outgoing(
+        state_cur,
+        out_degrees,
+        neuron_count,
+        out_stream
+    );
 
     compute_flows(
         state_cur,
         edge_list,
-        out_degrees,
         edge_count,
+        out_stream,
         I_stream
     );
 
@@ -202,10 +222,10 @@ void net_accel(
     bool reseed
 ) {
 // HP Port connections
-#pragma HLS INTERFACE m_axi port=state_in    offset=slave bundle=gmem0
-#pragma HLS INTERFACE m_axi port=edge_list   offset=slave bundle=gmem1
-#pragma HLS INTERFACE m_axi port=out_degrees_in offset=slave bundle=gmem1
-#pragma HLS INTERFACE m_axi port=state_out   offset=slave bundle=gmem0
+#pragma HLS INTERFACE m_axi port=edge_list   offset=slave bundle=gmem0 // This has to have its own HP port (most critical)
+#pragma HLS INTERFACE m_axi port=state_in    offset=slave bundle=gmem1
+#pragma HLS INTERFACE m_axi port=state_out   offset=slave bundle=gmem1
+#pragma HLS INTERFACE m_axi port=out_degrees_in offset=slave bundle=gmem2 // different port than state in/out because has different width. This way we allow bursting
 
 // Accelerator parameters
 #pragma HLS INTERFACE s_axilite port=state_in
@@ -269,22 +289,10 @@ void net_accel(
 
         PackedState p;
         p.bits = state_in[n];
-
         state_a[n] = p.state;
-    }
-
-
-    // --------------------------------------------------------
-    // Load out-degrees once
-    // --------------------------------------------------------
-
-LOAD_DEGREES:
-    for (int n = 0; n < neuron_count; ++n) {
-#pragma HLS PIPELINE II=1
 
         out_degrees_cache[n] = out_degrees_in[n];
     }
-
 
     // --------------------------------------------------------
     // Timesteps
