@@ -1,5 +1,6 @@
 #include "accelerator.hpp"
 #include <hls_stream.h>
+#include <iostream>
 
 /////////////////////////////////////////////////////////////////////
 // RNG
@@ -128,6 +129,7 @@ static void compute_flows(
     const State state_cur[MAX_NEURONS],
     const EdgeBits* edge_list,
     int edge_count,
+    fixed_t J,
     hls::stream<fixed_t>& out_stream,
     hls::stream<fixed_t>& I_stream
 ) {
@@ -137,18 +139,16 @@ EDGE_LOOP:
     for (int e = 0; e < edge_count; ++e) {
 #pragma HLS PIPELINE II=1
 
-        PackedEdge pe;
-        pe.bits = edge_list[e];
+        EdgeBits bits = edge_list[e];
 
-        Edge edge = pe.edge;
+        uint32_t from    = bits.range(31, 0);
+        bool last        = bits[32];
 
-        incoming_sum += state_cur[edge.from].u;
+        incoming_sum += state_cur[from].u;
 
-        if (edge.last) {
+        if (last) {
             fixed_t outgoing_term = out_stream.read();
-
-            fixed_t I =
-                incoming_sum - outgoing_term;
+            fixed_t I =  J * (incoming_sum - outgoing_term);
 
             I_stream.write(I);
 
@@ -166,6 +166,7 @@ static void timestep(
     int neuron_count,
     int edge_count,
     fixed_t dt,
+    fixed_t J,
     fixed_t a,
     fixed_t inv_e,
     fixed_t sigma_sqrt_dt,
@@ -189,6 +190,7 @@ static void timestep(
         state_cur,
         edge_list,
         edge_count,
+        J,
         out_stream,
         I_stream
     );
@@ -215,6 +217,7 @@ void net_accel(
     int edge_count,
     int iteration_count,
     fixed_t dt,
+    fixed_t J,
     fixed_t a,
     fixed_t inv_e,
     fixed_t sigma_sqrt_dt,
@@ -222,10 +225,10 @@ void net_accel(
     bool reseed
 ) {
 // HP Port connections
-#pragma HLS INTERFACE m_axi port=edge_list   offset=slave bundle=gmem0 // This has to have its own HP port (most critical)
-#pragma HLS INTERFACE m_axi port=state_in    offset=slave bundle=gmem1
-#pragma HLS INTERFACE m_axi port=state_out   offset=slave bundle=gmem1
-#pragma HLS INTERFACE m_axi port=out_degrees_in offset=slave bundle=gmem2 // different port than state in/out because has different width. This way we allow bursting
+#pragma HLS INTERFACE m_axi port=edge_list   offset=slave bundle=gmem0 depth=4000// This has to have its own HP port (most critical)
+#pragma HLS INTERFACE m_axi port=state_in    offset=slave bundle=gmem1 depth=2000
+#pragma HLS INTERFACE m_axi port=state_out   offset=slave bundle=gmem1 depth=2000
+#pragma HLS INTERFACE m_axi port=out_degrees_in offset=slave bundle=gmem2 depth=2000 // different port than state in/out because has different width. This way we allow bursting
 
 // Accelerator parameters
 #pragma HLS INTERFACE s_axilite port=state_in
@@ -239,6 +242,7 @@ void net_accel(
 
 // Model parameters
 #pragma HLS INTERFACE s_axilite port=dt
+#pragma HLS INTERFACE s_axilite port=J
 #pragma HLS INTERFACE s_axilite port=a
 #pragma HLS INTERFACE s_axilite port=inv_e
 #pragma HLS INTERFACE s_axilite port=sigma_sqrt_dt
@@ -248,17 +252,11 @@ void net_accel(
 
     static State state_a[MAX_NEURONS];
     static State state_b[MAX_NEURONS];
-
     static NeuronIndex out_degrees_cache[MAX_NEURONS];
-
-    #pragma HLS BIND_STORAGE variable=state_a \
-    type=ram_2p impl=bram
-
-    #pragma HLS BIND_STORAGE variable=state_b \
-    type=ram_2p impl=bram
-
-    #pragma HLS BIND_STORAGE variable=out_degrees_cache \
-    type=ram_1p impl=bram
+#pragma HLS BIND_STORAGE variable=state_a type=ram_2p impl=bram
+#pragma HLS BIND_STORAGE variable=state_b type=ram_2p impl=bram
+#pragma HLS BIND_STORAGE variable=out_degrees_cache type=ram_1p impl=bram
+// basically with this shit in bram, we avoid the overhead of random reads, which would fuck everthing up
 
     static ap_uint<32> rng_state[GAUSS_UNIFORMS] = {
         0x12345678,
@@ -287,9 +285,13 @@ void net_accel(
     for (int n = 0; n < neuron_count; ++n) {
 #pragma HLS PIPELINE II=1
 
-        PackedState p;
-        p.bits = state_in[n];
-        state_a[n] = p.state;
+        StateBits bits = state_in[n];
+
+        state_a[n].u.range(31, 0) =
+            bits.range(31, 0);
+
+        state_a[n].v.range(31, 0) =
+            bits.range(63, 32);
 
         out_degrees_cache[n] = out_degrees_in[n];
     }
@@ -310,6 +312,7 @@ TIMESTEP_LOOP:
                 neuron_count,
                 edge_count,
                 dt,
+                J,
                 a,
                 inv_e,
                 sigma_sqrt_dt,
@@ -325,6 +328,7 @@ TIMESTEP_LOOP:
                 neuron_count,
                 edge_count,
                 dt,
+                J,
                 a,
                 inv_e,
                 sigma_sqrt_dt,
@@ -342,15 +346,20 @@ STORE_STATE:
     for (int n = 0; n < neuron_count; ++n) {
 #pragma HLS PIPELINE II=1
 
-        PackedState p;
+        State s;
 
         if ((iteration_count & 1) == 0) {
-            p.state = state_a[n];
+            s = state_a[n];
         }
         else {
-            p.state = state_b[n];
+            s = state_b[n];
         }
 
-        state_out[n] = p.bits;
+        StateBits bits = 0;
+
+        bits.range(31, 0)  = s.u.range(31, 0);
+        bits.range(63, 32) = s.v.range(31, 0);
+
+        state_out[n] = bits;
     }
 }

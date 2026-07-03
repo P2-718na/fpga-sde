@@ -28,28 +28,16 @@ struct State {
     fixed_t v;
 };
 typedef ap_uint<64> StateBits;
-// Writing it this way avoids the ugly pack-unpack functions
-union PackedState {
-    State state;
-    StateBits bits;
-};
 
 // Make sure we are correcyly packing to 64 bit words.
 static_assert(sizeof(State) == 8, "State must be exactly 64 bits");
-static_assert(sizeof(PackedState) == 8, "PackedState must be exactly 64 bits");
-
 
 // w_nm mean a link from M to N
 struct Edge {
     NeuronIndex from;
-    NeuronIndex to;
     bool last;
 };
-typedef ap_uint<sizeof(Edge) * 8> EdgeBits;
-union PackedEdge {
-    Edge edge;
-    EdgeBits bits;
-};
+typedef ap_uint<64> EdgeBits;
 
 static_assert(sizeof(NeuronIndex) == 4, "Error");
 static_assert(sizeof(bool) == 1, "Bool size is incorrect");
@@ -65,6 +53,7 @@ void net_accel(
     int edge_count,
     int iteration_count,
     fixed_t dt,
+    fixed_t J,
     fixed_t a,
     fixed_t inv_e,
     fixed_t sigma_sqrt_dt,
