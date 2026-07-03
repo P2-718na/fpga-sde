@@ -1,27 +1,11 @@
 #include "accelerator.hpp"
+#include <hls_stream.h>
 
-//////////////////////////////////////////////////////////
-// BRAM STORAGE
-//////////////////////////////////////////////////////////
-
-static uint32_t row_ptr[MAX_NEURONS + 1];
-static uint16_t col_idx[MAX_EDGES];
-
-static uint16_t degree[MAX_NEURONS];
-
-static fixed_t u_a[MAX_NEURONS];
-static fixed_t v_a[MAX_NEURONS];
-
-static fixed_t u_b[MAX_NEURONS];
-static fixed_t v_b[MAX_NEURONS];
-
-
-//////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
 // RNG
-//////////////////////////////////////////////////////////
 
-static ap_uint<32> xorshift32(ap_uint<32>& state)
-{
+// Gotta use ap_uint so that we can call the .range function
+static ap_uint<32> xorshift32(ap_uint<32>& state) {
 #pragma HLS INLINE
 
     state ^= state << 13;
@@ -31,103 +15,230 @@ static ap_uint<32> xorshift32(ap_uint<32>& state)
     return state;
 }
 
+// Uniform generator between 0 and
 static fixed_t uniform01(ap_uint<32>& state)
 {
 #pragma HLS INLINE
 
+    // Here, we want to generate a random uniform between 0 and 1.
+    // Since we are using the q8.24 format, one way to do so is just discard the 8 integer bits
+    // and just use the upper 24 bits of the generator as the fractional bits.
+    // We loose precision, but now the distribution properties (mean and variane) are known and small (same order of 1). 
     ap_uint<32> r = xorshift32(state);
-
     ap_ufixed<24,0> frac;
+    // Range just copies elements bitwise
     frac.range(23,0) = r.range(31,8);
 
     return (fixed_t)frac;
 }
 
-static fixed_t gaussian_clt(
-    ap_uint<32> rng_state[GAUSS_UNIFORMS]
-)
-{
+static fixed_t gaussian_clt(ap_uint<32> rng_state[GAUSS_UNIFORMS]) {
 #pragma HLS INLINE
 
     fixed_t sum = 0;
 
-    for(int i=0;i<GAUSS_UNIFORMS;i++) {
-#pragma HLS UNROLL
+    for(int i = 0; i < GAUSS_UNIFORMS; ++i) {
+    #pragma HLS UNROLL
         sum += uniform01(rng_state[i]);
     }
 
-    return (sum - (fixed_t)(GAUSS_UNIFORMS/2))
-           * CLT_SCALE;
+    // TODO maybe properly check gen scales if they make sense
+    return (sum - (fixed_t)(GAUSS_UNIFORMS/2)) * CLT_SCALE;
 }
 
-//////////////////////////////////////////////////////////
-// TOP
-//////////////////////////////////////////////////////////
 
-void accelerator_net(
-    uint32_t* row_ptr_ddr,
-    uint16_t* col_idx_ddr,
 
-    fixed_t* u_ddr,
-    fixed_t* v_ddr,
-
-    int neuron_count,
-    int edge_count,
-    int timesteps,
-
-    int command,
-
+////////////////////////////////////////////////////////////////
+// Neuron integration
+static void integrate_one(
+    const State& old_s,
+    State& new_s,
+    fixed_t I,
     fixed_t dt,
     fixed_t a,
-    fixed_t J,
     fixed_t inv_e,
     fixed_t sigma_sqrt_dt,
+    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+) {
+    #pragma HLS INLINE
 
+    const fixed_t u = old_s.u;
+    const fixed_t v = old_s.v;
+
+    const fixed_t du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * inv_e;
+    const fixed_t dv = u + a;
+    // Qui non sto dividendo per epsilon per salvare risorse.
+    // La temperatura lato python deve contenere il fattore giusto.
+    const fixed_t noise = sigma_sqrt_dt * gaussian_clt(rng_state);
+
+    new_s.u = u + du * dt + noise;
+    new_s.v = v + dv * dt;
+}
+
+
+static void integrate_all(
+    const State state_cur[MAX_NEURONS],
+    State state_next[MAX_NEURONS],
+    int neuron_count,
+    hls::stream<fixed_t>& I_stream,
+    fixed_t dt,
+    fixed_t a,
+    fixed_t inv_e,
+    fixed_t sigma_sqrt_dt,
+    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+) {
+
+NEURON_LOOP:
+    for (int n = 0; n < neuron_count; ++n) {
+#pragma HLS PIPELINE II=1
+
+        const fixed_t I = I_stream.read();
+
+        integrate_one(
+            state_cur[n],
+            state_next[n],
+            I,
+            dt,
+            a,
+            inv_e,
+            sigma_sqrt_dt,
+            rng_state
+        );
+    }
+}
+
+static void compute_flows(
+    const State state_cur[MAX_NEURONS],
+    const EdgeBits* edge_list,
+    const NeuronIndex out_degrees[MAX_NEURONS],
+    int edge_count,
+    hls::stream<fixed_t>& I_stream
+) {
+    fixed_t incoming_sum = 0;
+
+EDGE_LOOP:
+    for (int e = 0; e < edge_count; ++e) {
+#pragma HLS PIPELINE II=1
+
+        PackedEdge pe;
+        pe.bits = edge_list[e];
+
+        const Edge edge = pe.edge;
+
+        // w_nm means m -> n, so this is:
+        // sum_m w_nm * u_m
+        incoming_sum += state_cur[edge.from].u;
+
+        if (edge.last) {
+            const NeuronIndex n = edge.to;
+
+            const fixed_t outgoing_term =
+                (fixed_t)out_degrees[n]
+                * state_cur[n].u;
+
+            const fixed_t I =
+                incoming_sum - outgoing_term;
+
+            I_stream.write(I);
+
+            incoming_sum = 0;
+        }
+    }
+}
+
+
+static void timestep(
+    const State state_cur[MAX_NEURONS],
+    State state_next[MAX_NEURONS],
+    const EdgeBits* edge_list,
+    const NeuronIndex out_degrees[MAX_NEURONS],
+    int neuron_count,
+    int edge_count,
+    fixed_t dt,
+    fixed_t a,
+    fixed_t inv_e,
+    fixed_t sigma_sqrt_dt,
+    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+) {
+#pragma HLS DATAFLOW
+
+    hls::stream<fixed_t> I_stream;
+#pragma HLS STREAM variable=I_stream depth=16
+
+    compute_flows(
+        state_cur,
+        edge_list,
+        out_degrees,
+        edge_count,
+        I_stream
+    );
+
+    integrate_all(
+        state_cur,
+        state_next,
+        neuron_count,
+        I_stream,
+        dt,
+        a,
+        inv_e,
+        sigma_sqrt_dt,
+        rng_state
+    );
+}
+
+void net_accel(
+    const StateBits* state_in,
+    const EdgeBits* edge_list,
+    const NeuronIndex* out_degrees_in,
+    StateBits* state_out,
+    int neuron_count,
+    int edge_count,
+    int iteration_count,
+    fixed_t dt,
+    fixed_t a,
+    fixed_t inv_e,
+    fixed_t sigma_sqrt_dt,
     ap_uint<32> seed,
     bool reseed
-)
-{
-#pragma HLS INTERFACE m_axi port=row_ptr_ddr bundle=gmem0
-#pragma HLS INTERFACE m_axi port=col_idx_ddr bundle=gmem0
+) {
+// HP Port connections
+#pragma HLS INTERFACE m_axi port=state_in    offset=slave bundle=gmem0
+#pragma HLS INTERFACE m_axi port=edge_list   offset=slave bundle=gmem1
+#pragma HLS INTERFACE m_axi port=out_degrees_in offset=slave bundle=gmem1
+#pragma HLS INTERFACE m_axi port=state_out   offset=slave bundle=gmem0
 
-#pragma HLS INTERFACE m_axi port=u_ddr bundle=gmem1
-#pragma HLS INTERFACE m_axi port=v_ddr bundle=gmem1
-
-#pragma HLS INTERFACE s_axilite port=row_ptr_ddr
-#pragma HLS INTERFACE s_axilite port=col_idx_ddr
-
-#pragma HLS INTERFACE s_axilite port=u_ddr
-#pragma HLS INTERFACE s_axilite port=v_ddr
-
+// Accelerator parameters
+#pragma HLS INTERFACE s_axilite port=state_in
+#pragma HLS INTERFACE s_axilite port=edge_list
+#pragma HLS INTERFACE s_axilite port=out_degrees_in
+#pragma HLS INTERFACE s_axilite port=state_out
 #pragma HLS INTERFACE s_axilite port=neuron_count
 #pragma HLS INTERFACE s_axilite port=edge_count
-#pragma HLS INTERFACE s_axilite port=timesteps
+#pragma HLS INTERFACE s_axilite port=iteration_count
+#pragma HLS INTERFACE s_axilite port=return
 
-#pragma HLS INTERFACE s_axilite port=command
-
+// Model parameters
 #pragma HLS INTERFACE s_axilite port=dt
 #pragma HLS INTERFACE s_axilite port=a
-#pragma HLS INTERFACE s_axilite port=J
 #pragma HLS INTERFACE s_axilite port=inv_e
 #pragma HLS INTERFACE s_axilite port=sigma_sqrt_dt
-
 #pragma HLS INTERFACE s_axilite port=seed
 #pragma HLS INTERFACE s_axilite port=reseed
 
-#pragma HLS INTERFACE s_axilite port=return
 
+    static State state_a[MAX_NEURONS];
+    static State state_b[MAX_NEURONS];
 
-/*
-#pragma HLS ARRAY_PARTITION variable=u_a cyclic factor=4
-#pragma HLS ARRAY_PARTITION variable=u_b cyclic factor=4
-#pragma HLS ARRAY_PARTITION variable=v_a cyclic factor=
-#pragma HLS ARRAY_PARTITION variable=v_b cyclic factor=
-*/
+    static NeuronIndex out_degrees_cache[MAX_NEURONS];
 
+    #pragma HLS BIND_STORAGE variable=state_a \
+    type=ram_2p impl=bram
 
-//////////////////////////////////////////////////////////
-// RNG
-//////////////////////////////////////////////////////////
+    #pragma HLS BIND_STORAGE variable=state_b \
+    type=ram_2p impl=bram
+
+    #pragma HLS BIND_STORAGE variable=out_degrees_cache \
+    type=ram_1p impl=bram
 
     static ap_uint<32> rng_state[GAUSS_UNIFORMS] = {
         0x12345678,
@@ -139,11 +250,9 @@ void accelerator_net(
         0x8BADF00D,
         0xFEEDFACE
     };
-
-#pragma HLS ARRAY_PARTITION variable=rng_state complete
+    #pragma HLS ARRAY_PARTITION variable=rng_state complete
 
     if(reseed) {
-
         rng_state[0] = seed;
         rng_state[1] = seed ^ 0x9E3779B9;
         rng_state[2] = seed ^ 0x243F6A88;
@@ -154,149 +263,86 @@ void accelerator_net(
         rng_state[7] = seed ^ 0xFEEDFACE;
     }
 
-//////////////////////////////////////////////////////////
-// LOAD GRAPH
-//////////////////////////////////////////////////////////
-
-    if(command == CMD_LOAD_GRAPH)
-    {
-    LOAD_ROW_PTR:
-        for(int i=0;i<neuron_count+1;i++)
-        {
-#pragma HLS PIPELINE II=1
-            row_ptr[i] = row_ptr_ddr[i];
-        }
-
-    LOAD_COL_IDX:
-        for(int i=0;i<edge_count;i++)
-        {
-#pragma HLS PIPELINE II=1
-            col_idx[i] = col_idx_ddr[i];
-        }
-
-    COMPUTE_DEGREE:
-        for(int n=0;n<neuron_count;n++)
-        {
-#pragma HLS PIPELINE II=1
-            degree[n] =
-                row_ptr[n+1]
-                - row_ptr[n];
-        }
-
-        return;
-    }
-
-//////////////////////////////////////////////////////////
-// LOAD STATE
-//////////////////////////////////////////////////////////
-
-    if(command == CMD_LOAD_STATE)
-    {
     LOAD_STATE:
-        for(int i=0;i<neuron_count;i++)
-        {
+    for (int n = 0; n < neuron_count; ++n) {
 #pragma HLS PIPELINE II=1
 
-            u_a[i] = u_ddr[i];
-            v_a[i] = v_ddr[i];
-        }
+        PackedState p;
+        p.bits = state_in[n];
 
-        return;
+        state_a[n] = p.state;
     }
 
-//////////////////////////////////////////////////////////
-// READ STATE
-//////////////////////////////////////////////////////////
 
-    if(command == CMD_READ_STATE)
-    {
-    STORE_STATE:
-        for(int i=0;i<neuron_count;i++)
-        {
+    // --------------------------------------------------------
+    // Load out-degrees once
+    // --------------------------------------------------------
+
+LOAD_DEGREES:
+    for (int n = 0; n < neuron_count; ++n) {
 #pragma HLS PIPELINE II=1
 
-            u_ddr[i] = u_a[i];
-            v_ddr[i] = v_a[i];
-        }
-
-        return;
+        out_degrees_cache[n] = out_degrees_in[n];
     }
 
-//////////////////////////////////////////////////////////
-// RUN
-//////////////////////////////////////////////////////////
 
-    if(command == CMD_RUN)
-    {
-    TIMESTEP_LOOP:
-        for(int step=0; step<timesteps; step++)
-        {
+    // --------------------------------------------------------
+    // Timesteps
+    // --------------------------------------------------------
 
-        NEURON_LOOP:
-            for(int n=0; n<neuron_count; n++)
-            {
-                fixed_t inflow = 0;
+TIMESTEP_LOOP:
+    for (int t = 0; t < iteration_count; ++t) {
 
-            EDGE_LOOP:
-                for(
-                    int e = row_ptr[n];
-                    e < row_ptr[n+1];
-                    e++
-                )
-                {
-#pragma HLS PIPELINE II=1
-
-                    const int m =
-                        col_idx[e];
-
-                    inflow += u_a[m];
-                }
-
-                const fixed_t u =
-                    u_a[n];
-
-                const fixed_t v =
-                    v_a[n];
-
-                const fixed_t I =
-                    J * (
-                        inflow
-                        - (fixed_t)degree[n] * u
-                    );
-
-                const fixed_t du =
-                    (
-                        u
-                        - u*u*u/(fixed_t)3
-                        - v
-                        + I
-                    ) * inv_e;
-
-                const fixed_t dv =
-                    u + a;
-
-                const fixed_t noise =
-                    sigma_sqrt_dt
-                    * gaussian_clt(rng_state);
-
-                u_b[n] =
-                    u
-                    + du*dt
-                    + noise;
-
-                v_b[n] =
-                    v
-                    + dv*dt;
-            }
-
-        SWAP:
-            for(int i=0;i<neuron_count;i++)
-            {
-#pragma HLS PIPELINE II=1
-
-                u_a[i] = u_b[i];
-                v_a[i] = v_b[i];
-            }
+        if ((t & 1) == 0) {
+            timestep(
+                state_a,
+                state_b,
+                edge_list,
+                out_degrees_cache,
+                neuron_count,
+                edge_count,
+                dt,
+                a,
+                inv_e,
+                sigma_sqrt_dt,
+                rng_state
+            );
         }
+        else {
+            timestep(
+                state_b,
+                state_a,
+                edge_list,
+                out_degrees_cache,
+                neuron_count,
+                edge_count,
+                dt,
+                a,
+                inv_e,
+                sigma_sqrt_dt,
+                rng_state
+            );
+        }
+    }
+
+
+    // --------------------------------------------------------
+    // Write final state
+    // --------------------------------------------------------
+
+STORE_STATE:
+    for (int n = 0; n < neuron_count; ++n) {
+#pragma HLS PIPELINE II=1
+
+        PackedState p;
+
+        if ((iteration_count & 1) == 0) {
+            p.state = state_a[n];
+        }
+        else {
+            p.state = state_b[n];
+        }
+
+        state_out[n] = p.bits;
     }
 }
