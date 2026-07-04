@@ -51,6 +51,25 @@ static fixed_t gaussian_clt(ap_uint<32> rng_state[GAUSS_UNIFORMS]) {
 
 
 // Neuron integration ////////////////////////////////////////////////////////////////
+// Duplicate the internal state_curr buffer into two separate queues
+// so we avoid the deadlock due to concurrent reads. FOR SOME REASON I HAVE TO WRITE THIS MYSELF (NOT) THANKS COMPILER
+static void read_states(
+    const State state_curr[MAX_NEURONS],
+    int neuron_count,
+    hls::stream<State>& integrate_state_stream,
+    hls::stream<fixed_t>& outgoing_u_stream
+) {
+    READ_LOOP:
+    for (int n = 0; n < neuron_count; ++n) {
+    #pragma HLS PIPELINE II=1   
+
+        State s = state_curr[n];
+
+        integrate_state_stream.write(s);
+        outgoing_u_stream.write(s.u);
+    }
+}
+
 static void integrate_one( // Euler-maruyama integration step
     const State& old_s,
     State& new_s,
@@ -78,7 +97,7 @@ static void integrate_one( // Euler-maruyama integration step
 
 
 static void integrate_all(
-    const State state_curr[MAX_NEURONS],
+    hls::stream<State>& state_stream,
     State state_next[MAX_NEURONS],
     int neuron_count,
     hls::stream<fixed_t>& I_stream,
@@ -88,16 +107,15 @@ static void integrate_all(
     fixed_t sigma_sqrt_dt,
     ap_uint<32> rng_state[GAUSS_UNIFORMS]
 ) {
-
-    NEURON_LOOP:
+    NEURON_LOOP: 
     for (int n = 0; n < neuron_count; ++n) {
     #pragma HLS PIPELINE II=1
 
-        // Consume EXACTLY one I_stream per neuron
-        const fixed_t I = I_stream.read();
+        State old_s = state_stream.read();
+        fixed_t I = I_stream.read();
 
         integrate_one(
-            state_curr[n],
+            old_s,
             state_next[n],
             I,
             dt,
@@ -111,19 +129,17 @@ static void integrate_all(
 
 // Computes outgoing term for flows. 
 static void compute_outgoing(
-    const State state_curr[MAX_NEURONS],
-    const NeuronDegree out_degrees[MAX_NEURONS], // We want to save out_degrees to BRAM so we don't clobber up the DRAM bus
-                                                // (during computation of outflows, it will already start reading edges...)
+    hls::stream<fixed_t>& u_stream,
+    const NeuronIndex out_degrees[MAX_NEURONS],
     int neuron_count,
     hls::stream<fixed_t>& out_stream
 ) {
-    NEURON_LOOP:
+    OUT_LOOP:
     for (int n = 0; n < neuron_count; ++n) {
     #pragma HLS PIPELINE II=1
 
-        fixed_t term = (fixed_t)out_degrees[n] * state_curr[n].u;
-
-        // Produce EXACTLY 1 term for out_stream
+        fixed_t u = u_stream.read();
+        fixed_t term = (fixed_t)out_degrees[n] * u;
         out_stream.write(term);
     }
 }
@@ -185,15 +201,27 @@ static void timestep(
 // Also to allow for easier swapping syntax.
 #pragma HLS DATAFLOW
 
-
-
-    hls::stream<fixed_t> I_stream;
+    hls::stream<State> state_stream;
+    hls::stream<fixed_t> outgoing_u_stream;
     hls::stream<fixed_t> out_stream;
-    #pragma HLS STREAM variable=I_stream depth=16
-    #pragma HLS STREAM variable=out_stream depth=16
+    hls::stream<fixed_t> I_stream;
 
-   compute_outgoing(
+    #pragma HLS STREAM variable=state_stream depth=16
+    #pragma HLS STREAM variable=outgoing_u_stream depth=16
+    #pragma HLS STREAM variable=out_stream depth=16
+    #pragma HLS STREAM variable=I_stream depth=16
+
+    // This is necessary to fanout the value of state_curr[n] otherwise it deadlocks
+    // (thanks compiler for not inferring this)
+    read_states(
         state_curr,
+        neuron_count,
+        state_stream,
+        outgoing_u_stream
+    );
+
+    compute_outgoing(
+        outgoing_u_stream,
         out_degrees,
         neuron_count,
         out_stream
@@ -209,7 +237,7 @@ static void timestep(
     );
 
     integrate_all(
-        state_curr,
+        state_stream,
         state_next,
         neuron_count,
         I_stream,
