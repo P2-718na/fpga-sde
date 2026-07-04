@@ -7,17 +7,6 @@
 
 constexpr int MAX_NEURONS = 24576; //~380Kib
 
-#define GAUSS_UNIFORMS 8
-#if GAUSS_UNIFORMS == 4
-#define CLT_SCALE (fixed_t)1.73205080757
-#elif GAUSS_UNIFORMS == 8
-#define CLT_SCALE (fixed_t)1.22474487139
-#elif GAUSS_UNIFORMS == 12
-#define CLT_SCALE (fixed_t)1.0
-#else
-#error "Unsupported GAUSS_UNIFORMS"
-#endif
-
 //typedef ap_uint<LOG2_2048> NeuronIndex; -- impossible to use
 // we are kinda stuck with multiples of one byte
 typedef ap_uint<32> NeuronIndex;

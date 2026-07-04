@@ -3,6 +3,7 @@
 // TODO THis file is AI slop it needs to be checked. It appears to be working.
 
 #include "accelerator.hpp"
+#include "rng.hpp"
 
 #include <cmath>
 #include <iostream>
@@ -91,6 +92,9 @@ static State cpu_integrate_one(
 
 int main()
 {
+    //rng_test();
+    //return 0;
+
     constexpr int N = 33;
     constexpr int E = 2 * N;
 
