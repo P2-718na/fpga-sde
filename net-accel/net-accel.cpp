@@ -2,9 +2,10 @@
 #include <hls_stream.h>
 #include <iostream>
 
-/////////////////////////////////////////////////////////////////////
-// RNG
+// FIXME AFER CLEANU IT UCKING DOESNT WORK
+// ONLY WORKS FOR NEURONS UP TO 16
 
+// RNG //////////////////////////////////////////////////////////////
 // Gotta use ap_uint so that we can call the .range function
 static ap_uint<32> xorshift32(ap_uint<32>& state) {
 #pragma HLS INLINE
@@ -16,9 +17,8 @@ static ap_uint<32> xorshift32(ap_uint<32>& state) {
     return state;
 }
 
-// Uniform generator between 0 and
-static fixed_t uniform01(ap_uint<32>& state)
-{
+// Uniform generator between 0 and 1. 
+static fixed_t uniform01(ap_uint<32>& state) {
 #pragma HLS INLINE
 
     // Here, we want to generate a random uniform between 0 and 1.
@@ -38,20 +38,20 @@ static fixed_t gaussian_clt(ap_uint<32> rng_state[GAUSS_UNIFORMS]) {
 
     fixed_t sum = 0;
 
-    for(int i = 0; i < GAUSS_UNIFORMS; ++i) {
+    for (int i = 0; i < GAUSS_UNIFORMS; ++i) {
     #pragma HLS UNROLL
         sum += uniform01(rng_state[i]);
     }
 
-    // TODO maybe properly check gen scales if they make sense
+    // TODO maybe properly check fixed number scales if they make sense (we don't wanna waste too much precision)
     return (sum - (fixed_t)(GAUSS_UNIFORMS/2)) * CLT_SCALE;
 }
+//////////////////////////////////////////////////////////////////////////
 
 
 
-////////////////////////////////////////////////////////////////
-// Neuron integration
-static void integrate_one(
+// Neuron integration ////////////////////////////////////////////////////////////////
+static void integrate_one( // Euler-maruyama integration step
     const State& old_s,
     State& new_s,
     fixed_t I,
@@ -61,7 +61,7 @@ static void integrate_one(
     fixed_t sigma_sqrt_dt,
     ap_uint<32> rng_state[GAUSS_UNIFORMS]
 ) {
-    #pragma HLS INLINE
+#pragma HLS INLINE
 
     const fixed_t u = old_s.u;
     const fixed_t v = old_s.v;
@@ -78,7 +78,7 @@ static void integrate_one(
 
 
 static void integrate_all(
-    const State state_cur[MAX_NEURONS],
+    const State state_curr[MAX_NEURONS],
     State state_next[MAX_NEURONS],
     int neuron_count,
     hls::stream<fixed_t>& I_stream,
@@ -89,14 +89,15 @@ static void integrate_all(
     ap_uint<32> rng_state[GAUSS_UNIFORMS]
 ) {
 
-NEURON_LOOP:
+    NEURON_LOOP:
     for (int n = 0; n < neuron_count; ++n) {
-#pragma HLS PIPELINE II=1
+    #pragma HLS PIPELINE II=1
 
+        // Consume EXACTLY one I_stream per neuron
         const fixed_t I = I_stream.read();
 
         integrate_one(
-            state_cur[n],
+            state_curr[n],
             state_next[n],
             I,
             dt,
@@ -108,25 +109,27 @@ NEURON_LOOP:
     }
 }
 
+// Computes outgoing term for flows. 
 static void compute_outgoing(
-    const State state_cur[MAX_NEURONS],
-    const NeuronIndex out_degrees[MAX_NEURONS],
+    const State state_curr[MAX_NEURONS],
+    const NeuronDegree out_degrees[MAX_NEURONS], // We want to save out_degrees to BRAM so we don't clobber up the DRAM bus
+                                                // (during computation of outflows, it will already start reading edges...)
     int neuron_count,
     hls::stream<fixed_t>& out_stream
 ) {
-NEURON_LOOP:
+    NEURON_LOOP:
     for (int n = 0; n < neuron_count; ++n) {
-#pragma HLS PIPELINE II=1
+    #pragma HLS PIPELINE II=1
 
-        fixed_t term =
-            (fixed_t)out_degrees[n] * state_cur[n].u;
+        fixed_t term = (fixed_t)out_degrees[n] * state_curr[n].u;
 
+        // Produce EXACTLY 1 term for out_stream
         out_stream.write(term);
     }
 }
 
 static void compute_flows(
-    const State state_cur[MAX_NEURONS],
+    const State state_curr[MAX_NEURONS],
     const EdgeBits* edge_list,
     int edge_count,
     fixed_t J,
@@ -135,21 +138,24 @@ static void compute_flows(
 ) {
     fixed_t incoming_sum = 0;
 
-EDGE_LOOP:
+    EDGE_LOOP:
     for (int e = 0; e < edge_count; ++e) {
-#pragma HLS PIPELINE II=1
+    #pragma HLS PIPELINE II=1
 
+        // Parse packed edge format
         EdgeBits bits = edge_list[e];
+        uint32_t from = bits.range(31, 0);
+        bool last     = bits[32];
 
-        uint32_t from    = bits.range(31, 0);
-        bool last        = bits[32];
+        incoming_sum += state_curr[from].u;
 
-        incoming_sum += state_cur[from].u;
-
+        // EVERY Neuron MUST have a last edge. We force this by making every neuron connected to itself.
+        // The interaction terms of it with itself cancel out in this branch...
         if (last) {
             fixed_t outgoing_term = out_stream.read();
             fixed_t I =  J * (incoming_sum - outgoing_term);
 
+            // Produce EXACTLY 1 I per neuron
             I_stream.write(I);
 
             incoming_sum = 0;
@@ -159,10 +165,10 @@ EDGE_LOOP:
 
 
 static void timestep(
-    const State state_cur[MAX_NEURONS],
+    const State state_curr[MAX_NEURONS],
     State state_next[MAX_NEURONS],
     const EdgeBits* edge_list,
-    const NeuronIndex out_degrees[MAX_NEURONS],
+    const NeuronDegree out_degrees[MAX_NEURONS],
     int neuron_count,
     int edge_count,
     fixed_t dt,
@@ -172,22 +178,29 @@ static void timestep(
     fixed_t sigma_sqrt_dt,
     ap_uint<32> rng_state[GAUSS_UNIFORMS]
 ) {
+// We want to _stream_
+// Basically, the next operation will start alongside the first, as soon as the first bytes of useful data come out.
+// Depth of 16 allows for a small buffer in the operations, in case some loops trip way later/sooner than the others.
+// Dataflow pragma is HERE, and not in top level, because we wanna make sure that the BRAM pingpong is not DATAFLOW'd.
+// Also to allow for easier swapping syntax.
 #pragma HLS DATAFLOW
 
+
+
     hls::stream<fixed_t> I_stream;
-    #pragma HLS STREAM variable=I_stream depth=16
     hls::stream<fixed_t> out_stream;
+    #pragma HLS STREAM variable=I_stream depth=16
     #pragma HLS STREAM variable=out_stream depth=16
 
-    compute_outgoing(
-        state_cur,
+   compute_outgoing(
+        state_curr,
         out_degrees,
         neuron_count,
         out_stream
     );
 
     compute_flows(
-        state_cur,
+        state_curr,
         edge_list,
         edge_count,
         J,
@@ -196,7 +209,7 @@ static void timestep(
     );
 
     integrate_all(
-        state_cur,
+        state_curr,
         state_next,
         neuron_count,
         I_stream,
@@ -211,7 +224,7 @@ static void timestep(
 void net_accel(
     const StateBits* state_in,
     const EdgeBits* edge_list,
-    const NeuronIndex* out_degrees_in,
+    const NeuronDegree* out_degrees_in,
     StateBits* state_out,
     int neuron_count,
     int edge_count,
@@ -225,10 +238,11 @@ void net_accel(
     bool reseed
 ) {
 // HP Port connections
-#pragma HLS INTERFACE m_axi port=edge_list   offset=slave bundle=gmem0 depth=4000// This has to have its own HP port (most critical)
-#pragma HLS INTERFACE m_axi port=state_in    offset=slave bundle=gmem1 depth=2000
-#pragma HLS INTERFACE m_axi port=state_out   offset=slave bundle=gmem1 depth=2000
-#pragma HLS INTERFACE m_axi port=out_degrees_in offset=slave bundle=gmem2 depth=2000 // different port than state in/out because has different width. This way we allow bursting
+// depth pragmas are useful only in RTL simulation
+#pragma HLS INTERFACE m_axi port=edge_list        offset=slave bundle=gmem0 depth=4000// This has to have its own HP port (most critical)
+#pragma HLS INTERFACE m_axi port=state_in         offset=slave bundle=gmem1 depth=2000
+#pragma HLS INTERFACE m_axi port=state_out        offset=slave bundle=gmem1 depth=2000
+#pragma HLS INTERFACE m_axi port=out_degrees_in   offset=slave bundle=gmem2 depth=2000 // different port than state in/out because has different width. This way we allow bursting
 
 // Accelerator parameters
 #pragma HLS INTERFACE s_axilite port=state_in
@@ -252,11 +266,13 @@ void net_accel(
 
     static State state_a[MAX_NEURONS];
     static State state_b[MAX_NEURONS];
-    static NeuronIndex out_degrees_cache[MAX_NEURONS];
-#pragma HLS BIND_STORAGE variable=state_a type=ram_2p impl=bram
-#pragma HLS BIND_STORAGE variable=state_b type=ram_2p impl=bram
-#pragma HLS BIND_STORAGE variable=out_degrees_cache type=ram_1p impl=bram
-// basically with this shit in bram, we avoid the overhead of random reads, which would fuck everthing up
+    static NeuronDegree out_degrees_cache[MAX_NEURONS];
+    #pragma HLS BIND_STORAGE variable=state_a type=ram_2p impl=bram
+    #pragma HLS BIND_STORAGE variable=state_b type=ram_2p impl=bram
+    #pragma HLS BIND_STORAGE variable=out_degrees_cache type=ram_1p impl=bram
+    // basically with these things in BRAM, we avoid
+    // 1) random reads for state, which would make DRAM bus really slow
+    // 2) We leave the DRAM bus free to fetch the (very long) sequential edge data, without intermittent halts to eftch state and/or degree
 
     static ap_uint<32> rng_state[GAUSS_UNIFORMS] = {
         0x12345678,
@@ -270,6 +286,7 @@ void net_accel(
     };
     #pragma HLS ARRAY_PARTITION variable=rng_state complete
 
+    RESEED:
     if(reseed) {
         rng_state[0] = seed;
         rng_state[1] = seed ^ 0x9E3779B9;
@@ -281,28 +298,21 @@ void net_accel(
         rng_state[7] = seed ^ 0xFEEDFACE;
     }
 
-    LOAD_STATE:
-    for (int n = 0; n < neuron_count; ++n) {
-#pragma HLS PIPELINE II=1
+    LOAD_BRAM:
+    for (int n = 0; n < neuron_count; ++n) { // We don't wanna use != operator in for in hls
+    #pragma HLS PIPELINE II=1
 
         StateBits bits = state_in[n];
 
-        state_a[n].u.range(31, 0) =
-            bits.range(31, 0);
-
-        state_a[n].v.range(31, 0) =
-            bits.range(63, 32);
-
+        state_a[n].u.range(31, 0) = bits.range(31, 0);
+        state_a[n].v.range(31, 0) = bits.range(63, 32);
         out_degrees_cache[n] = out_degrees_in[n];
     }
 
-    // --------------------------------------------------------
-    // Timesteps
-    // --------------------------------------------------------
-
-TIMESTEP_LOOP:
+    TIMESTEP_LOOP:
     for (int t = 0; t < iteration_count; ++t) {
 
+        // We want to swap BRAM arrays every timestep (pingpong buffering)
         if ((t & 1) == 0) {
             timestep(
                 state_a,
@@ -318,8 +328,7 @@ TIMESTEP_LOOP:
                 sigma_sqrt_dt,
                 rng_state
             );
-        }
-        else {
+        } else {
             timestep(
                 state_b,
                 state_a,
@@ -337,26 +346,14 @@ TIMESTEP_LOOP:
         }
     }
 
-
-    // --------------------------------------------------------
-    // Write final state
-    // --------------------------------------------------------
-
-STORE_STATE:
+    // Write back final state to DRAM
+    STORE_STATE:
     for (int n = 0; n < neuron_count; ++n) {
-#pragma HLS PIPELINE II=1
+    #pragma HLS PIPELINE II=1
 
-        State s;
-
-        if ((iteration_count & 1) == 0) {
-            s = state_a[n];
-        }
-        else {
-            s = state_b[n];
-        }
+        const State s = ((iteration_count & 1) == 0) ? state_a[n] : state_b[n];
 
         StateBits bits = 0;
-
         bits.range(31, 0)  = s.u.range(31, 0);
         bits.range(63, 32) = s.v.range(31, 0);
 

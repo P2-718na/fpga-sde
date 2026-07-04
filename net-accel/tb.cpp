@@ -1,5 +1,7 @@
 // tb.cpp
 
+// TODO THis file is AI slop it needs to be checked. It appears to be working.
+
 #include "accelerator.hpp"
 
 #include <cmath>
@@ -89,13 +91,13 @@ static State cpu_integrate_one(
 
 int main()
 {
-    constexpr int N = 8;
+    constexpr int N = 33;
     constexpr int E = 2 * N;
 
     constexpr int ITERATIONS = 1;
 
     const fixed_t dt    = (fixed_t)0.001;
-    const fixed_t J     = (fixed_t)0.1;
+    const fixed_t J     = (fixed_t)0.;
     const fixed_t a     = (fixed_t)1.3;
     const fixed_t inv_e = (fixed_t)10.0;
 
