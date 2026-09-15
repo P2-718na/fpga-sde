@@ -21,7 +21,6 @@
 int rng_test();
 
 
-// RNG //////////////////////////////////////////////////////////////
 // Gotta use ap_uint so that we can call the .range function
 static ap_uint<32> xorshift32(ap_uint<32>& state) {
 #pragma HLS INLINE
@@ -62,8 +61,6 @@ static fixed_t gaussian_clt(ap_uint<32> rng_state[GAUSS_UNIFORMS]) {
     // TODO maybe properly check fixed number scales if they make sense (we don't wanna waste too much precision)
     return (sum - (fixed_t)(GAUSS_UNIFORMS/2)) * CLT_SCALE;
 }
-//////////////////////////////////////////////////////////////////////////
-
 
 
 
