@@ -1,7 +1,5 @@
 // tb.cpp
 
-// TODO THis file is AI slop it needs to be checked. It appears to be working.
-
 #include "accelerator.hpp"
 #include "rng.hpp"
 
