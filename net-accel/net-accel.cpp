@@ -12,8 +12,8 @@
 static void read_states(
     const State state_curr[MAX_NEURONS],
     int neuron_count,
-    hls::stream<State>& integrate_state_stream,
-    hls::stream<fixed_t>& outgoing_u_stream
+    hls::stream<State>& state_stream,
+    hls::stream<fixed_t>& u_stream
 ) {
     READ_LOOP:
     for (int n = 0; n < neuron_count; ++n) {
@@ -21,8 +21,8 @@ static void read_states(
 
         State s = state_curr[n];
 
-        integrate_state_stream.write(s);
-        outgoing_u_stream.write(s.u);
+        state_stream.write(s);
+        u_stream.write(s.u);
     }
 }
 
@@ -158,50 +158,50 @@ static void timestep(
 #pragma HLS DATAFLOW
 
     hls::stream<State> state_stream;
-    hls::stream<fixed_t> outgoing_u_stream;
-    hls::stream<fixed_t> out_stream;
+    hls::stream<fixed_t> u_stream;
+    hls::stream<fixed_t> outgoing_term_stream;
     hls::stream<fixed_t> I_stream;
 
     #pragma HLS STREAM variable=state_stream depth=16
-    #pragma HLS STREAM variable=outgoing_u_stream depth=16
-    #pragma HLS STREAM variable=out_stream depth=16
+    #pragma HLS STREAM variable=u_stream depth=16
+    #pragma HLS STREAM variable=outgoing_term_stream depth=16
     #pragma HLS STREAM variable=I_stream depth=16
 
     // This is necessary to fanout the value of state_curr[n] otherwise it deadlocks
     // (thanks compiler for not inferring this)
     read_states(
-        state_curr,
-        neuron_count,
-        state_stream,
-        outgoing_u_stream
+        state_curr,     // input (static)
+        neuron_count,   // input (static)
+        state_stream,   // output (produce 1 (copy) of state_curr[n])
+        u_stream        // output (produce 1 (copy) of just state_curr.u[n])
     );
 
     compute_outgoing(
-        outgoing_u_stream,
-        out_degrees,
-        neuron_count,
-        out_stream
+        u_stream,               // input (consume one u)
+        out_degrees,            // input (static)
+        neuron_count,           // input (static)
+        outgoing_term_stream    // output (produce 1 outgoing term)
     );
 
     compute_flows(
-        state_curr,
-        edge_list,
-        edge_count,
-        J,
-        out_stream,
-        I_stream
+        state_curr,             // input (static, bram)
+        edge_list,              // input ! IMPORTANT ! This is read FROM DRAM, has to be done SEQUENTIALLY
+        edge_count,             // input (static)
+        J,                      // input (static)
+        outgoing_term_stream,   // input (consume 1 outgoing term)
+        I_stream                // output (produce 1 I)
     );
 
     integrate_all(
-        state_stream,
-        state_next,
-        neuron_count,
-        I_stream,
-        dt,
-        a,
-        inv_e,
-        sigma_sqrt_dt,
-        rng_state
+        state_stream,   // input (consume 1 copy of state_curr)
+        state_next,     // output (produce the next tat)
+        neuron_count,   // input (static)
+        I_stream,       // input (static)
+        dt,             // input (static)
+        a,              // input (static)
+        inv_e,          // input (static)
+        sigma_sqrt_dt,  // input (static)
+        rng_state       // input (gen)
     );
 }
 
