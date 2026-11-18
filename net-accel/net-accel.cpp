@@ -2,29 +2,10 @@
 #include "rng.hpp"
 #include <hls_stream.h>
 
-// FIXME AFER CLEANU IT UCKING DOESNT WORK
-// ONLY WORKS FOR NEURONS UP TO 16
+
 
 
 // Neuron integration ////////////////////////////////////////////////////////////////
-// Duplicate the internal state_curr buffer into two separate queues
-// so we avoid the deadlock due to concurrent reads. FOR SOME REASON I HAVE TO WRITE THIS MYSELF (NOT) THANKS COMPILER
-static void read_states(
-    const State state_curr[MAX_NEURONS],
-    int neuron_count,
-    hls::stream<State>& state_stream,
-    hls::stream<fixed_t>& u_stream
-) {
-    READ_LOOP:
-    for (int n = 0; n < neuron_count; ++n) {
-    #pragma HLS PIPELINE II=1   
-
-        State s = state_curr[n];
-
-        state_stream.write(s);
-        u_stream.write(s.u);
-    }
-}
 
 static void generate_noise(
     int neuron_count,
@@ -144,32 +125,17 @@ static void integrate_rk_stage_final(
     }
 }
 
-// Computes outgoing term for flows. 
-static void compute_outgoing(
-    hls::stream<fixed_t>& u_stream,
-    const NeuronIndex out_degrees[MAX_NEURONS],
-    int neuron_count,
-    hls::stream<fixed_t>& out_stream
-) {
-    OUT_LOOP:
-    for (int n = 0; n < neuron_count; ++n) {
-    #pragma HLS PIPELINE II=1
-
-        fixed_t u = u_stream.read();
-        fixed_t term = (fixed_t)out_degrees[n] * u;
-        out_stream.write(term);
-    }
-}
-
 static void compute_flows(
     const State state_curr[MAX_NEURONS],
+    const NeuronDegree out_degrees[MAX_NEURONS],
     const EdgeBits* edge_list,
     int edge_count,
     fixed_t J,
-    hls::stream<fixed_t>& out_stream,
-    hls::stream<fixed_t>& I_stream
+    hls::stream<fixed_t>& I_stream,
+    hls::stream<State>& state_stream
 ) {
     fixed_t incoming_sum = 0;
+    int curr_neuron = 0;
 
     EDGE_LOOP:
     for (int e = 0; e < edge_count; ++e) {
@@ -185,13 +151,16 @@ static void compute_flows(
         // EVERY Neuron MUST have a last edge. We force this by making every neuron connected to itself.
         // The interaction terms of it with itself cancel out in this branch...
         if (last) {
-            fixed_t outgoing_term = out_stream.read();
-            fixed_t I =  J * (incoming_sum - outgoing_term);
+            State s = state_curr[curr_neuron];
+            fixed_t outgoing_term = (fixed_t)out_degrees[curr_neuron] * s.u;
+            fixed_t I = J * (incoming_sum - outgoing_term);
 
-            // Produce EXACTLY 1 I per neuron
+            // Produce EXACTLY 1 I and 1 State per neuron in lockstep
             I_stream.write(I);
+            state_stream.write(s);
 
             incoming_sum = 0;
+            curr_neuron++;
         }
     }
 }
@@ -214,40 +183,26 @@ static void rk_stage_intermediate(
     fixed_t a,
     fixed_t inv_e
 ) {
+// function_instantiate instantiates a separate hardware circuit for each possible value of the variable "stage".
+// Avoids vitis having to create a multiplexer for each one of the different input arrays (we are swapping them around in between steps) that are fed to the fn
+// this reduces the critical timing path and speeds things up.
 #pragma HLS function_instantiate variable=stage
 #pragma HLS DATAFLOW
 
     hls::stream<State> state_stream;
-    hls::stream<fixed_t> u_stream;
-    hls::stream<fixed_t> outgoing_term_stream;
     hls::stream<fixed_t> I_stream;
 
     #pragma HLS STREAM variable=state_stream depth=16
-    #pragma HLS STREAM variable=u_stream depth=16
-    #pragma HLS STREAM variable=outgoing_term_stream depth=16
     #pragma HLS STREAM variable=I_stream depth=16
-
-    read_states(
-        state_eval,
-        neuron_count,
-        state_stream,
-        u_stream
-    );
-
-    compute_outgoing(
-        u_stream,
-        out_degrees,
-        neuron_count,
-        outgoing_term_stream
-    );
 
     compute_flows(
         state_eval,
+        out_degrees,
         edge_list,
         edge_count,
         J,
-        outgoing_term_stream,
-        I_stream
+        I_stream,
+        state_stream
     );
 
     integrate_rk_stage(
@@ -284,38 +239,21 @@ static void rk_stage_final(
 #pragma HLS DATAFLOW
 
     hls::stream<State> state_stream;
-    hls::stream<fixed_t> u_stream;
-    hls::stream<fixed_t> outgoing_term_stream;
     hls::stream<fixed_t> I_stream;
     hls::stream<fixed_t> noise_stream;
 
     #pragma HLS STREAM variable=state_stream depth=16
-    #pragma HLS STREAM variable=u_stream depth=16
-    #pragma HLS STREAM variable=outgoing_term_stream depth=16
     #pragma HLS STREAM variable=I_stream depth=16
     #pragma HLS STREAM variable=noise_stream depth=16
 
-    read_states(
-        state_eval,
-        neuron_count,
-        state_stream,
-        u_stream
-    );
-
-    compute_outgoing(
-        u_stream,
-        out_degrees,
-        neuron_count,
-        outgoing_term_stream
-    );
-
     compute_flows(
         state_eval,
+        out_degrees,
         edge_list,
         edge_count,
         J,
-        outgoing_term_stream,
-        I_stream
+        I_stream,
+        state_stream
     );
 
     generate_noise(
@@ -482,10 +420,10 @@ void net_accel(
     static State stage_buf_0[MAX_NEURONS];
     static State stage_buf_1[MAX_NEURONS];
     static NeuronDegree out_degrees_cache[MAX_NEURONS];
-    #pragma HLS BIND_STORAGE variable=state_a type=ram_2p impl=bram
-    #pragma HLS BIND_STORAGE variable=state_b type=ram_2p impl=bram
-    #pragma HLS BIND_STORAGE variable=stage_buf_0 type=ram_2p impl=bram
-    #pragma HLS BIND_STORAGE variable=stage_buf_1 type=ram_2p impl=bram
+    #pragma HLS BIND_STORAGE variable=state_a type=ram_t2p impl=bram
+    #pragma HLS BIND_STORAGE variable=state_b type=ram_t2p impl=bram
+    #pragma HLS BIND_STORAGE variable=stage_buf_0 type=ram_t2p impl=bram
+    #pragma HLS BIND_STORAGE variable=stage_buf_1 type=ram_t2p impl=bram
     #pragma HLS BIND_STORAGE variable=out_degrees_cache type=ram_1p impl=bram
     // basically with these things in BRAM, we avoid
     // 1) random reads for state, which would make DRAM bus really slow
