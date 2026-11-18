@@ -9,7 +9,7 @@ csim:
 
 # Run HLS C-Synthesis for net-accel
 synth:
-    cd net-accel; vitis-run --mode hls --config hls_config.cfg --work_dir build
+    cd net-accel; v++ -c --mode hls --config hls_config.cfg --work_dir build
 
 # Run HLS C/RTL Co-simulation for net-accel
 cosim:
