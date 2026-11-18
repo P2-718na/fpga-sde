@@ -26,60 +26,121 @@ static void read_states(
     }
 }
 
-static void integrate_one( // Euler-maruyama integration step
-    const State& old_s,
-    State& new_s,
-    fixed_t I,
-    fixed_t dt,
-    fixed_t a,
-    fixed_t inv_e,
+static void generate_noise(
+    int neuron_count,
     fixed_t sigma_sqrt_dt,
-    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+    ap_uint<32> rng_state[GAUSS_UNIFORMS],
+    hls::stream<fixed_t>& noise_stream
 ) {
-#pragma HLS INLINE
-
-    const fixed_t u = old_s.u;
-    const fixed_t v = old_s.v;
-
-    const fixed_t du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * inv_e;
-    const fixed_t dv = u + a;
-    // Qui non sto dividendo per epsilon per salvare risorse.
-    // La temperatura lato python deve contenere il fattore giusto.
-    const fixed_t noise = sigma_sqrt_dt * gaussian_clt(rng_state);
-
-    new_s.u = u + du * dt + noise;
-    new_s.v = v + dv * dt;
+    NOISE_LOOP:
+    for (int n = 0; n < neuron_count; ++n) {
+    #pragma HLS PIPELINE II=1
+        const fixed_t noise = sigma_sqrt_dt * gaussian_clt(rng_state);
+        noise_stream.write(noise);
+    }
 }
 
-
-static void integrate_all(
+static void integrate_rk_stage(
+    int stage,
     hls::stream<State>& state_stream,
+    const State state_orig[MAX_NEURONS],
+    State state_write[MAX_NEURONS],
     State state_next[MAX_NEURONS],
     int neuron_count,
     hls::stream<fixed_t>& I_stream,
     fixed_t dt,
+    fixed_t dt_half,
+    fixed_t dt_third,
+    fixed_t dt_sixth,
     fixed_t a,
-    fixed_t inv_e,
-    fixed_t sigma_sqrt_dt,
-    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+    fixed_t inv_e
+) {
+#pragma HLS function_instantiate variable=stage
+
+    NEURON_LOOP: 
+    for (int n = 0; n < neuron_count; ++n) {
+    #pragma HLS PIPELINE II=1
+
+        const State s_eval = state_stream.read();
+        const fixed_t I = I_stream.read();
+
+        const fixed_t u = s_eval.u;
+        const fixed_t v = s_eval.v;
+
+        const fixed_t du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * inv_e;
+        const fixed_t dv = u + a;
+
+        switch (stage) {
+            case 0: {
+                State next_s;
+                next_s.u = s_eval.u + du * dt_half;
+                next_s.v = s_eval.v + dv * dt_half;
+                state_write[n] = next_s;
+
+                State acc_s;
+                acc_s.u = s_eval.u + du * dt_sixth;
+                acc_s.v = s_eval.v + dv * dt_sixth;
+                state_next[n] = acc_s;
+                break;
+            }
+            case 1: {
+                const State s_orig = state_orig[n];
+                State next_s;
+                next_s.u = s_orig.u + du * dt_half;
+                next_s.v = s_orig.v + dv * dt_half;
+                state_write[n] = next_s;
+
+                State acc_s = state_next[n];
+                acc_s.u += du * dt_third;
+                acc_s.v += dv * dt_third;
+                state_next[n] = acc_s;
+                break;
+            }
+            case 2: default: {
+                const State s_orig = state_orig[n];
+                State next_s;
+                next_s.u = s_orig.u + du * dt;
+                next_s.v = s_orig.v + dv * dt;
+                state_write[n] = next_s;
+
+                State acc_s = state_next[n];
+                acc_s.u += du * dt_third;
+                acc_s.v += dv * dt_third;
+                state_next[n] = acc_s;
+                break;
+            }
+        }
+    }
+}
+
+static void integrate_rk_stage_final(
+    hls::stream<State>& state_stream,
+    State state_next[MAX_NEURONS],
+    int neuron_count,
+    hls::stream<fixed_t>& I_stream,
+    hls::stream<fixed_t>& noise_stream,
+    fixed_t dt_sixth,
+    fixed_t a,
+    fixed_t inv_e
 ) {
     NEURON_LOOP: 
     for (int n = 0; n < neuron_count; ++n) {
     #pragma HLS PIPELINE II=1
 
-        State old_s = state_stream.read();
-        fixed_t I = I_stream.read();
+        const State s_eval = state_stream.read();
+        const fixed_t I = I_stream.read();
+        const fixed_t noise = noise_stream.read();
 
-        integrate_one(
-            old_s,
-            state_next[n],
-            I,
-            dt,
-            a,
-            inv_e,
-            sigma_sqrt_dt,
-            rng_state
-        );
+        const fixed_t u = s_eval.u;
+        const fixed_t v = s_eval.v;
+
+        const fixed_t du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * inv_e;
+        const fixed_t dv = u + a;
+
+        State acc_s = state_next[n];
+        acc_s.u += du * dt_sixth + noise;
+        acc_s.v += dv * dt_sixth;
+        state_next[n] = acc_s;
     }
 }
 
@@ -135,26 +196,25 @@ static void compute_flows(
     }
 }
 
-
-static void timestep(
-    const State state_curr[MAX_NEURONS],
+static void rk_stage_intermediate(
+    int stage,
+    const State state_eval[MAX_NEURONS],
+    const State state_orig[MAX_NEURONS],
+    State state_write[MAX_NEURONS],
     State state_next[MAX_NEURONS],
     const EdgeBits* edge_list,
     const NeuronDegree out_degrees[MAX_NEURONS],
     int neuron_count,
     int edge_count,
     fixed_t dt,
+    fixed_t dt_half,
+    fixed_t dt_third,
+    fixed_t dt_sixth,
     fixed_t J,
     fixed_t a,
-    fixed_t inv_e,
-    fixed_t sigma_sqrt_dt,
-    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+    fixed_t inv_e
 ) {
-// We want to _stream_
-// Basically, the next operation will start alongside the first, as soon as the first bytes of useful data come out.
-// Depth of 16 allows for a small buffer in the operations, in case some loops trip way later/sooner than the others.
-// Dataflow pragma is HERE, and not in top level, because we wanna make sure that the BRAM pingpong is not DATAFLOW'd.
-// Also to allow for easier swapping syntax.
+#pragma HLS function_instantiate variable=stage
 #pragma HLS DATAFLOW
 
     hls::stream<State> state_stream;
@@ -167,41 +227,210 @@ static void timestep(
     #pragma HLS STREAM variable=outgoing_term_stream depth=16
     #pragma HLS STREAM variable=I_stream depth=16
 
-    // This is necessary to fanout the value of state_curr[n] otherwise it deadlocks
-    // (thanks compiler for not inferring this)
     read_states(
-        state_curr,     // input (static)
-        neuron_count,   // input (static)
-        state_stream,   // output (produce 1 (copy) of state_curr[n])
-        u_stream        // output (produce 1 (copy) of just state_curr.u[n])
+        state_eval,
+        neuron_count,
+        state_stream,
+        u_stream
     );
 
     compute_outgoing(
-        u_stream,               // input (consume one u)
-        out_degrees,            // input (static)
-        neuron_count,           // input (static)
-        outgoing_term_stream    // output (produce 1 outgoing term)
+        u_stream,
+        out_degrees,
+        neuron_count,
+        outgoing_term_stream
     );
 
     compute_flows(
-        state_curr,             // input (static, bram)
-        edge_list,              // input ! IMPORTANT ! This is read FROM DRAM, has to be done SEQUENTIALLY
-        edge_count,             // input (static)
-        J,                      // input (static)
-        outgoing_term_stream,   // input (consume 1 outgoing term)
-        I_stream                // output (produce 1 I)
+        state_eval,
+        edge_list,
+        edge_count,
+        J,
+        outgoing_term_stream,
+        I_stream
     );
 
-    integrate_all(
-        state_stream,   // input (consume 1 copy of state_curr)
-        state_next,     // output (produce the next tat)
-        neuron_count,   // input (static)
-        I_stream,       // input (static)
-        dt,             // input (static)
-        a,              // input (static)
-        inv_e,          // input (static)
-        sigma_sqrt_dt,  // input (static)
-        rng_state       // input (gen)
+    integrate_rk_stage(
+        stage,
+        state_stream,
+        state_orig,
+        state_write,
+        state_next,
+        neuron_count,
+        I_stream,
+        dt,
+        dt_half,
+        dt_third,
+        dt_sixth,
+        a,
+        inv_e
+    );
+}
+
+static void rk_stage_final(
+    const State state_eval[MAX_NEURONS],
+    State state_next[MAX_NEURONS],
+    const EdgeBits* edge_list,
+    const NeuronDegree out_degrees[MAX_NEURONS],
+    int neuron_count,
+    int edge_count,
+    fixed_t dt_sixth,
+    fixed_t J,
+    fixed_t a,
+    fixed_t inv_e,
+    fixed_t sigma_sqrt_dt,
+    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+) {
+#pragma HLS DATAFLOW
+
+    hls::stream<State> state_stream;
+    hls::stream<fixed_t> u_stream;
+    hls::stream<fixed_t> outgoing_term_stream;
+    hls::stream<fixed_t> I_stream;
+    hls::stream<fixed_t> noise_stream;
+
+    #pragma HLS STREAM variable=state_stream depth=16
+    #pragma HLS STREAM variable=u_stream depth=16
+    #pragma HLS STREAM variable=outgoing_term_stream depth=16
+    #pragma HLS STREAM variable=I_stream depth=16
+    #pragma HLS STREAM variable=noise_stream depth=16
+
+    read_states(
+        state_eval,
+        neuron_count,
+        state_stream,
+        u_stream
+    );
+
+    compute_outgoing(
+        u_stream,
+        out_degrees,
+        neuron_count,
+        outgoing_term_stream
+    );
+
+    compute_flows(
+        state_eval,
+        edge_list,
+        edge_count,
+        J,
+        outgoing_term_stream,
+        I_stream
+    );
+
+    generate_noise(
+        neuron_count,
+        sigma_sqrt_dt,
+        rng_state,
+        noise_stream
+    );
+
+    integrate_rk_stage_final(
+        state_stream,
+        state_next,
+        neuron_count,
+        I_stream,
+        noise_stream,
+        dt_sixth,
+        a,
+        inv_e
+    );
+}
+
+static void timestep(
+    const State state_curr[MAX_NEURONS],
+    State state_next[MAX_NEURONS],
+    State stage_buf_0[MAX_NEURONS],
+    State stage_buf_1[MAX_NEURONS],
+    const EdgeBits* edge_list,
+    const NeuronDegree out_degrees[MAX_NEURONS],
+    int neuron_count,
+    int edge_count,
+    fixed_t dt,
+    fixed_t J,
+    fixed_t a,
+    fixed_t inv_e,
+    fixed_t sigma_sqrt_dt,
+    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+) {
+    const fixed_t dt_half  = dt * (fixed_t)0.5;
+    const fixed_t dt_third = dt * (fixed_t)(1.0 / 3.0);
+    const fixed_t dt_sixth = dt * (fixed_t)(1.0 / 6.0);
+
+    // Stage 0: evaluate state_curr, write stage_buf_0, init state_next accumulator
+    rk_stage_intermediate(
+        0,
+        state_curr,
+        state_curr,
+        stage_buf_0,
+        state_next,
+        edge_list,
+        out_degrees,
+        neuron_count,
+        edge_count,
+        dt,
+        dt_half,
+        dt_third,
+        dt_sixth,
+        J,
+        a,
+        inv_e
+    );
+
+    // Stage 1: evaluate stage_buf_0, write stage_buf_1, accumulate into state_next
+    rk_stage_intermediate(
+        1,
+        stage_buf_0,
+        state_curr,
+        stage_buf_1,
+        state_next,
+        edge_list,
+        out_degrees,
+        neuron_count,
+        edge_count,
+        dt,
+        dt_half,
+        dt_third,
+        dt_sixth,
+        J,
+        a,
+        inv_e
+    );
+
+    // Stage 2: evaluate stage_buf_1, write stage_buf_0, accumulate into state_next
+    rk_stage_intermediate(
+        2,
+        stage_buf_1,
+        state_curr,
+        stage_buf_0,
+        state_next,
+        edge_list,
+        out_degrees,
+        neuron_count,
+        edge_count,
+        dt,
+        dt_half,
+        dt_third,
+        dt_sixth,
+        J,
+        a,
+        inv_e
+    );
+
+    // Stage 3: evaluate stage_buf_0, generate noise in parallel, finalize state_next
+    rk_stage_final(
+        stage_buf_0,
+        state_next,
+        edge_list,
+        out_degrees,
+        neuron_count,
+        edge_count,
+        dt_sixth,
+        J,
+        a,
+        inv_e,
+        sigma_sqrt_dt,
+        rng_state
     );
 }
 
@@ -250,9 +479,13 @@ void net_accel(
 
     static State state_a[MAX_NEURONS];
     static State state_b[MAX_NEURONS];
+    static State stage_buf_0[MAX_NEURONS];
+    static State stage_buf_1[MAX_NEURONS];
     static NeuronDegree out_degrees_cache[MAX_NEURONS];
     #pragma HLS BIND_STORAGE variable=state_a type=ram_2p impl=bram
     #pragma HLS BIND_STORAGE variable=state_b type=ram_2p impl=bram
+    #pragma HLS BIND_STORAGE variable=stage_buf_0 type=ram_2p impl=bram
+    #pragma HLS BIND_STORAGE variable=stage_buf_1 type=ram_2p impl=bram
     #pragma HLS BIND_STORAGE variable=out_degrees_cache type=ram_1p impl=bram
     // basically with these things in BRAM, we avoid
     // 1) random reads for state, which would make DRAM bus really slow
@@ -301,6 +534,8 @@ void net_accel(
             timestep(
                 state_a,
                 state_b,
+                stage_buf_0,
+                stage_buf_1,
                 edge_list,
                 out_degrees_cache,
                 neuron_count,
@@ -316,6 +551,8 @@ void net_accel(
             timestep(
                 state_b,
                 state_a,
+                stage_buf_0,
+                stage_buf_1,
                 edge_list,
                 out_degrees_cache,
                 neuron_count,

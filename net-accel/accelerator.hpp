@@ -5,7 +5,7 @@
 #include <ap_int.h>
 #include <cstdint>
 
-constexpr int MAX_NEURONS = 24576; //~380Kib
+constexpr int MAX_NEURONS = 12288;
 
 //typedef ap_uint<LOG2_2048> NeuronIndex; -- impossible to use
 // we are kinda stuck with multiples of one byte

@@ -52,35 +52,29 @@ static EdgeBits pack_edge(
 
 
 // ============================================================
-// CPU reference: deterministic one-step update
+// CPU reference: deterministic RK4 update
 // ============================================================
 
-static State cpu_integrate_one(
-    const State& old_s,
+struct Deriv {
+    fixed_t du;
+    fixed_t dv;
+};
+
+static Deriv cpu_fhn_deriv(
+    const State& s,
     fixed_t I,
-    fixed_t dt,
     fixed_t a,
     fixed_t inv_e
 )
 {
-    State result;
+    Deriv d;
+    const fixed_t u = s.u;
+    const fixed_t v = s.v;
 
-    const fixed_t u = old_s.u;
-    const fixed_t v = old_s.v;
+    d.du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * inv_e;
+    d.dv = u + a;
 
-    const fixed_t du =
-        (u
-        - u*u*u*(fixed_t)(1.0/3.0)
-        - v
-        + I)
-        * inv_e;
-
-    const fixed_t dv = u + a;
-
-    result.u = u + du * dt;
-    result.v = v + dv * dt;
-
-    return result;
+    return d;
 }
 
 
@@ -248,50 +242,86 @@ int main()
     }
 
     // --------------------------------------------------------
-    // Build CPU reference result
+    // Build CPU reference result (RK4)
     // --------------------------------------------------------
 
     State reference[N];
-
     for (int n = 0; n < N; ++n) {
+        reference[n] = unpack_state(state_in[n]);
+    }
 
-        State self =
-            unpack_state(state_in[n]);
+    const fixed_t dt_half  = dt * (fixed_t)0.5;
+    const fixed_t dt_third = dt * (fixed_t)(1.0 / 3.0);
+    const fixed_t dt_sixth = dt * (fixed_t)(1.0 / 6.0);
 
-        const int left =
-            (n - 1 + N) % N;
+    for (int t = 0; t < ITERATIONS; ++t) {
+        Deriv k1[N], k2[N], k3[N], k4[N];
+        State s_stage[N];
+        State s_orig[N];
 
-        const int right =
-            (n + 1) % N;
+        for (int n = 0; n < N; ++n) {
+            s_orig[n] = reference[n];
+        }
 
-        State s_left =
-            unpack_state(state_in[left]);
+        // Stage 0: k1 evaluated at s_orig
+        for (int n = 0; n < N; ++n) {
+            const int left  = (n - 1 + N) % N;
+            const int right = (n + 1) % N;
+            fixed_t incoming_sum  = s_orig[left].u + s_orig[right].u;
+            fixed_t outgoing_term = (fixed_t)2 * s_orig[n].u;
+            fixed_t I = J * (incoming_sum - outgoing_term);
 
-        State s_right =
-            unpack_state(state_in[right]);
+            k1[n] = cpu_fhn_deriv(s_orig[n], I, a, inv_e);
+            s_stage[n].u = s_orig[n].u + k1[n].du * dt_half;
+            s_stage[n].v = s_orig[n].v + k1[n].dv * dt_half;
+        }
 
+        // Stage 1: k2 evaluated at s_stage (from k1)
+        for (int n = 0; n < N; ++n) {
+            const int left  = (n - 1 + N) % N;
+            const int right = (n + 1) % N;
+            fixed_t incoming_sum  = s_stage[left].u + s_stage[right].u;
+            fixed_t outgoing_term = (fixed_t)2 * s_stage[n].u;
+            fixed_t I = J * (incoming_sum - outgoing_term);
 
-        fixed_t incoming_sum =
-            s_left.u + s_right.u;
+            k2[n] = cpu_fhn_deriv(s_stage[n], I, a, inv_e);
+        }
+        for (int n = 0; n < N; ++n) {
+            s_stage[n].u = s_orig[n].u + k2[n].du * dt_half;
+            s_stage[n].v = s_orig[n].v + k2[n].dv * dt_half;
+        }
 
-        fixed_t outgoing_term =
-            (fixed_t)2 * self.u;
+        // Stage 2: k3 evaluated at s_stage (from k2)
+        for (int n = 0; n < N; ++n) {
+            const int left  = (n - 1 + N) % N;
+            const int right = (n + 1) % N;
+            fixed_t incoming_sum  = s_stage[left].u + s_stage[right].u;
+            fixed_t outgoing_term = (fixed_t)2 * s_stage[n].u;
+            fixed_t I = J * (incoming_sum - outgoing_term);
 
-        fixed_t I =
-            J * (
-                incoming_sum
-                - outgoing_term
-            );
+            k3[n] = cpu_fhn_deriv(s_stage[n], I, a, inv_e);
+        }
+        for (int n = 0; n < N; ++n) {
+            s_stage[n].u = s_orig[n].u + k3[n].du * dt;
+            s_stage[n].v = s_orig[n].v + k3[n].dv * dt;
+        }
 
+        // Stage 3: k4 evaluated at s_stage (from k3)
+        for (int n = 0; n < N; ++n) {
+            const int left  = (n - 1 + N) % N;
+            const int right = (n + 1) % N;
+            fixed_t incoming_sum  = s_stage[left].u + s_stage[right].u;
+            fixed_t outgoing_term = (fixed_t)2 * s_stage[n].u;
+            fixed_t I = J * (incoming_sum - outgoing_term);
 
-        reference[n] =
-            cpu_integrate_one(
-                self,
-                I,
-                dt,
-                a,
-                inv_e
-            );
+            k4[n] = cpu_fhn_deriv(s_stage[n], I, a, inv_e);
+        }
+
+        // Final update (matching fixed-point accumulation in HW)
+        for (int n = 0; n < N; ++n) {
+            reference[n].u = s_orig[n].u + k1[n].du * dt_sixth + k2[n].du * dt_third + k3[n].du * dt_third + k4[n].du * dt_sixth;
+            reference[n].v = s_orig[n].v + k1[n].dv * dt_sixth + k2[n].dv * dt_third + k3[n].dv * dt_third + k4[n].dv * dt_sixth;
+        }
     }
 
 
