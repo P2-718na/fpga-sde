@@ -87,7 +87,7 @@ int main()
     //rng_test();
     //return 0;
 
-    constexpr int N = 33;
+    constexpr int N = 128;
     constexpr int E = 2 * N;
 
     constexpr int ITERATIONS = 1;
