@@ -418,8 +418,10 @@ int main()
             (step == 1) // reseed on first step only
         );
 
-        // CPU reference step
-        cpu_rk4_step(reference, N, dt, J, a, inv_e);
+        // CPU reference step: two half-steps of size h = dt/2
+        const fixed_t h = dt * (fixed_t)0.5;
+        cpu_rk4_step(reference, N, h, J, a, inv_e);
+        cpu_rk4_step(reference, N, h, J, a, inv_e);
 
         const float sim_time = step * (float)dt;
 

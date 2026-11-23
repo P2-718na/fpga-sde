@@ -37,10 +37,10 @@ static_assert(sizeof(Edge) == sizeof(EdgeBits), "Incorrect packed state size");
 struct ModelParams {
     int neuron_count;
     int edge_count;
-    fixed_t dt;
-    fixed_t dt_half;
-    fixed_t dt_third;
-    fixed_t dt_sixth;
+    fixed_t h;
+    fixed_t h_half;
+    fixed_t h_third;
+    fixed_t h_sixth;
     fixed_t J;
     fixed_t a;
     fixed_t inv_e;
