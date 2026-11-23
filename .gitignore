@@ -28,6 +28,7 @@ net-accel/.cache
 net-accel/.Xil
 net-accel/compile_commands.json
 net-accel/build
+net-accel/trajectory.csv
 ##
 
 sde-accel/dfx_runtime.txt

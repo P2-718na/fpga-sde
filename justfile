@@ -19,4 +19,8 @@ cosim:
 package:
     cd net-accel; vitis-run --mode hls --package --config hls_config.cfg --work_dir build
 
+# Plot simulation trajectory with gnuplot
+plot:
+    gnuplot -p scripts/plot-trajectory.gp
+
 alias sim := csim
