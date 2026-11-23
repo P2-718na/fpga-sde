@@ -34,6 +34,19 @@ static_assert(sizeof(NeuronIndex) == 4, "Error");
 static_assert(sizeof(bool) == 1, "Bool size is incorrect");
 static_assert(sizeof(Edge) == sizeof(EdgeBits), "Incorrect packed state size"); 
 
+struct ModelParams {
+    int neuron_count;
+    int edge_count;
+    fixed_t dt;
+    fixed_t dt_half;
+    fixed_t dt_third;
+    fixed_t dt_sixth;
+    fixed_t J;
+    fixed_t a;
+    fixed_t inv_e;
+    fixed_t sigma_sqrt_dt;
+};
+
 void net_accel(
     // Large memory accesses
     const StateBits* state_in,      // Input state provided by PS. Will be copied once from DDR to BRAM
