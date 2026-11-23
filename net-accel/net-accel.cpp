@@ -244,9 +244,22 @@ static void rk_stage_final(
     );
 }
 
+// =================================================================================================================
+// Zero-Copy RK4 Buffer Liveness & Routing Table:
+// Stage | state_curr            | rk_buffer_a           | rk_buffer_b                       | rk_buffer_c (output)
+// ------+-----------------------+-----------------------+-----------------------------------+----------------------
+//   0   | Read y_0              | Write y_0 + h/2*k1    | Init  y_0 + h/6*k1                | (idle)
+//   1   | Read y_0 (base)       | Read  y_0 + h/2*k1    | Acc   + h/3*k2                    | Write y_0 + h/2*k2
+//   2   | Read y_0 (base)       | Write y_0 + h*k3      | Acc   + h/3*k3                    | Read  y_0 + h/2*k2
+//   3   | (idle)                | Read  y_0 + h*k3      | Final + h/6*k4 + noise = y_half   | (idle)
+//   4   | (idle)                | Write y_half + h/2*k1 | Read  y_half (base & eval)        | Init  y_half + h/6*k1
+//   5   | Write y_half + h/2*k2 | Read  y_half + h/2*k1 | Read  y_half (base)               | Acc   + h/3*k2
+//   6   | Read  y_half + h/2*k2 | Write y_half + h*k3   | Read  y_half (base)               | Acc   + h/3*k3
+//   7   | (idle)                | Read  y_half + h*k3   | Read  y_half (base)               | Final + h/6*k4 = y_out
+// =================================================================================================================
 static void timestep(
     State state_curr[MAX_NEURONS],
-    State state_accumulator[MAX_NEURONS],
+    State rk_buffer_c[MAX_NEURONS],
     State rk_buffer_a[MAX_NEURONS],
     State rk_buffer_b[MAX_NEURONS],
     const EdgeBits* edge_list,
@@ -254,52 +267,51 @@ static void timestep(
     const ModelParams& params,
     ap_uint<32> rng_state[GAUSS_UNIFORMS]
 ) {
-    // =========================================================================
+    // -------------------------------------------------------------------------
     // Step 1: First RK4 half-step (step size h), with noise added at stage 3.
-    // Base is state_curr; accumulated directly into state_accumulator (y_half).
-    // rk_buffer_a and rk_buffer_b are used as intermediate probe scratchpads.
-    // =========================================================================
+    // Base is state_curr; accumulated directly into rk_buffer_b (holds y_half).
+    // -------------------------------------------------------------------------
 
-    // Stage 0: y_0 = state_curr, eval state_curr, write next to rk_buffer_a, init state_accumulator
+    // Stage 0: y_0 = state_curr, eval state_curr, write next to rk_buffer_a, init rk_buffer_b
     rk_stage_intermediate(
         0,
         state_curr,          // y_0
         state_curr,          // curr_state_intermediate
         rk_buffer_a,         // next_state_intermediate
-        state_accumulator,   // state_accumulator (holding y_half)
+        rk_buffer_b,         // state_accumulator (holding y_half)
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 1: y_0 = state_curr, eval rk_buffer_a, write next to rk_buffer_b, acc to state_accumulator
+    // Stage 1: y_0 = state_curr, eval rk_buffer_a, write next to rk_buffer_c, acc to rk_buffer_b
     rk_stage_intermediate(
         1,
         state_curr,          // y_0
         rk_buffer_a,         // curr_state_intermediate
-        rk_buffer_b,         // next_state_intermediate
-        state_accumulator,   // state_accumulator (holding y_half)
+        rk_buffer_c,         // next_state_intermediate
+        rk_buffer_b,         // state_accumulator (holding y_half)
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 2: y_0 = state_curr, eval rk_buffer_b, write next to rk_buffer_a, acc to state_accumulator
+    // Stage 2: y_0 = state_curr, eval rk_buffer_c, write next to rk_buffer_a, acc to rk_buffer_b
     rk_stage_intermediate(
         2,
         state_curr,          // y_0
-        rk_buffer_b,         // curr_state_intermediate
+        rk_buffer_c,         // curr_state_intermediate
         rk_buffer_a,         // next_state_intermediate
-        state_accumulator,   // state_accumulator (holding y_half)
+        rk_buffer_b,         // state_accumulator (holding y_half)
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 3: eval rk_buffer_a, add noise, finalize state_accumulator -> holds y_half
+    // Stage 3: eval rk_buffer_a, add noise, finalize rk_buffer_b -> holds y_half
     rk_stage_final(
         rk_buffer_a,         // curr_state_intermediate
-        state_accumulator,   // state_accumulator (holding y_half)
+        rk_buffer_b,         // state_accumulator (holding y_half)
         edge_list,
         out_degrees,
         params,
@@ -307,69 +319,52 @@ static void timestep(
         true                 // add_noise = true
     );
 
-    // =========================================================================
-    // Save midpoint state y_half from state_accumulator into rk_buffer_b so it
-    // can serve as the fixed baseline y_0 during Step 2 without being overwritten.
-    //
-    // NOTE ON LATENCY / PING-PONG:
-    // This pipelined copy takes N clock cycles. We could eliminate this latency
-    // overhead entirely by using a zero-copy ping-pong scheme across steps
-    // (i.e. having Step 1 accumulate directly into rk_buffer_b and Step 2 into
-    // state_accumulator), but copying keeps state_accumulator strictly as the
-    // accumulator in both steps for clearer and more maintainable code structure.
-    // =========================================================================
-    SAVE_MIDPOINT:
-    for (int n = 0; n < params.neuron_count; ++n) {
-    #pragma HLS PIPELINE II=1
-        rk_buffer_b[n] = state_accumulator[n];
-    }
-
-    // =========================================================================
+    // -------------------------------------------------------------------------
     // Step 2: Second RK4 half-step (step size h), without noise.
-    // Base is rk_buffer_b (y_half); accumulated into state_accumulator (final).
-    // state_curr is dead after Step 1, so it is free to serve as scratchpad.
-    // =========================================================================
+    // Base is rk_buffer_b (y_half); accumulated directly into rk_buffer_c (final).
+    // state_curr is dead after Step 1, so it is reused as intermediate scratchpad.
+    // -------------------------------------------------------------------------
 
-    // Stage 4 (Stage 0 of step 2): y_0 = rk_buffer_b, eval rk_buffer_b, write next to rk_buffer_a, init state_accumulator
+    // Stage 4 (0): y_0 = rk_buffer_b, eval rk_buffer_b, write next to rk_buffer_a, init rk_buffer_c
     rk_stage_intermediate(
         0,
         rk_buffer_b,         // y_0 (y_half)
         rk_buffer_b,         // curr_state_intermediate (y_half)
         rk_buffer_a,         // next_state_intermediate
-        state_accumulator,   // state_accumulator (final output)
+        rk_buffer_c,         // state_accumulator (final output)
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 5 (Stage 1 of step 2): y_0 = rk_buffer_b, eval rk_buffer_a, write next to state_curr, acc to state_accumulator
+    // Stage 5 (1): y_0 = rk_buffer_b, eval rk_buffer_a, write next to state_curr, acc to rk_buffer_c
     rk_stage_intermediate(
         1,
         rk_buffer_b,         // y_0 (y_half)
         rk_buffer_a,         // curr_state_intermediate
         state_curr,          // next_state_intermediate (scratch)
-        state_accumulator,   // state_accumulator (final output)
+        rk_buffer_c,         // state_accumulator (final output)
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 6 (Stage 2 of step 2): y_0 = rk_buffer_b, eval state_curr, write next to rk_buffer_a, acc to state_accumulator
+    // Stage 6 (2): y_0 = rk_buffer_b, eval state_curr, write next to rk_buffer_a, acc to rk_buffer_c
     rk_stage_intermediate(
         2,
         rk_buffer_b,         // y_0 (y_half)
         state_curr,          // curr_state_intermediate
         rk_buffer_a,         // next_state_intermediate
-        state_accumulator,   // state_accumulator (final output)
+        rk_buffer_c,         // state_accumulator (final output)
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 7 (Stage 3 of step 2): eval rk_buffer_a, finalize state_accumulator, without noise
+    // Stage 7 (3): eval rk_buffer_a, finalize rk_buffer_c, without noise
     rk_stage_final(
         rk_buffer_a,         // curr_state_intermediate
-        state_accumulator,   // state_accumulator (final output)
+        rk_buffer_c,         // state_accumulator (final output)
         edge_list,
         out_degrees,
         params,
