@@ -11,6 +11,19 @@ t_min = STATS_min
 t_max = STATS_max
 dt = (STATS_records > 1) ? (t_max - t_min) / (STATS_records - 1) : 0.1
 
+# Automatically calculate stride to downsample heatmap if file is large
+max_heatmap_rows = 500
+heatmap_stride = int(ceil(STATS_records / real(max_heatmap_rows)))
+if (heatmap_stride < 1) {
+    heatmap_stride = 1
+}
+dt_heatmap = dt * heatmap_stride
+
+if (heatmap_stride > 1) {
+    print sprintf("Large dataset (%d records): downsampling heatmap with stride %d (~%d time steps).", \
+                  STATS_records, heatmap_stride, int(STATS_records / heatmap_stride))
+}
+
 set multiplot layout 2, 1
 
 # -----------------------------------------------------------------------------
@@ -40,7 +53,7 @@ set cblabel "u"
 set palette viridis
 
 set xrange [-0.5 : num_neurons - 0.5]
-set yrange [t_min - dt/2.0 : t_max + dt/2.0]
+set yrange [t_min - dt_heatmap/2.0 : t_max + dt_heatmap/2.0]
 
 if (num_neurons <= 20) {
     set xtics 1
@@ -50,7 +63,8 @@ if (num_neurons <= 20) {
 
 # boxxyerror: x:y:xdelta:ydelta:color
 # Draws a solid filled rectangle for each (neuron, time) point colored by neuron_u
-plot for [i=0:num_neurons-1] datafile using (i):1:(0.5):(dt/2.0):(column(2 + 4*i)) \
+plot for [i=0:num_neurons-1] datafile skip 1 every heatmap_stride \
+     using (i):1:(0.5):(dt_heatmap/2.0):(column(2 + 4*i)) \
      with boxxyerror lc palette fillstyle solid notitle
 
 unset multiplot
