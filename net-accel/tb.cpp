@@ -175,14 +175,14 @@ int main()
     //rng_test();
     //return 0;
 
-    constexpr int N = 17;
+    constexpr int N = 33;
     constexpr int E = 2 * N;
 
-    constexpr int TOTAL_STEPS = 5000;
+    constexpr int TOTAL_STEPS = 400;
 
-    const fixed_t dt    = (fixed_t)0.001;
-    const fixed_t J     = (fixed_t)0.1;
-    const fixed_t a     = (fixed_t)1.3;
+    const fixed_t dt    = (fixed_t)0.01;
+    const fixed_t J     = (fixed_t)2.0;
+    const fixed_t a     = (fixed_t)1.02;
     const fixed_t inv_e = (fixed_t)10.0;
 
     // Disable noise for deterministic comparison
@@ -213,7 +213,7 @@ int main()
     // v* = u* - u*^3 / 3
     // --------------------------------------------------------
 
-    const float a_float = 1.3f;
+    const float a_float = (float)a;
 
     const float u_rest = -a_float;
 
