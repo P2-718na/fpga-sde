@@ -180,6 +180,15 @@ int main()
 
     constexpr int TOTAL_STEPS = 400;
 
+    /*
+        const fixed_t dt    = (fixed_t)0.01;
+        const fixed_t J     = (fixed_t)0.0;
+        const fixed_t a     = (fixed_t)1.1;
+        const fixed_t inv_e = (fixed_t)10.0;
+        // Disable noise for deterministic comparison
+        const fixed_t sigma_sqrt_dt = (fixed_t).05;
+    */
+
     const fixed_t dt    = (fixed_t)0.01;
     const fixed_t J     = (fixed_t)2.0;
     const fixed_t a     = (fixed_t)1.02;
