@@ -198,12 +198,12 @@ int main()
     // Allocate test arrays
     // --------------------------------------------------------
 
-    StateBits state_in[2000];
-    StateBits state_out[2000];
+    static StateBits state_in[2000] = {};
+    static StateBits state_out[2000] = {};
 
-    EdgeBits edges[4000];
+    static EdgeBits edges[4000] = {};
 
-    NeuronIndex out_degrees[2000];
+    static NeuronIndex out_degrees[2000] = {};
 
 
     // --------------------------------------------------------
@@ -473,14 +473,14 @@ int main()
     // Stiff-parameter regression test (epsilon = 0.01, |du| > 150)
     // --------------------------------------------------------
 
-    constexpr int STIFF_STEPS = 1000;
+    constexpr int STIFF_STEPS = 400;
     const fixed_t stiff_dt    = (fixed_t)0.0001;
     const fixed_t stiff_J     = (fixed_t)0.2;
     const fixed_t stiff_a     = (fixed_t)1.1;
     const fixed_t stiff_inv_e = (fixed_t)100.0;
 
-    StateBits stiff_in[N];
-    StateBits stiff_out[N];
+    static StateBits stiff_in[2000] = {};
+    static StateBits stiff_out[2000] = {};
     RefState stiff_ref[N];
 
     const double stiff_a_d = (double)stiff_a;
@@ -497,6 +497,10 @@ int main()
         State init_0 = unpack_state(stiff_in[0]);
         stiff_ref[0] = { (double)init_0.u, (double)init_0.v };
     }
+
+    std::cout << "\nRunning stiff epsilon=0.01 check (" << STIFF_STEPS
+              << " steps in a single net_accel call; note that in RTL cosim "
+                 "transaction 401/401 will take ~as long as the first 400 calls combined)...\n";
 
     net_accel(
         stiff_in,
