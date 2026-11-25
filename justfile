@@ -110,9 +110,9 @@ deploy:
 [arg("epsilon", short="e", long="epsilon")]
 [arg("sigma", long="sigma")]
 [arg("seed", long="seed")]
-[arg("impulse_width", long="impulse-width")]
-[arg("impulse_u", long="impulse-u")]
-run-ring neurons="256" steps="5000" stride="500" dt="0.001" J="2" a="1.1" epsilon="0.1" sigma="0.1" seed="12345678" impulse_width="5" impulse_u="1.5":
+[arg("impulse_width", long="impulse_width")]
+[arg("impulse_u", long="impulse_u")]
+run-ring neurons="512" steps="8000" stride="100" dt="0.001" J=".5" a="1.3" epsilon="0.01" sigma="2.1" seed="12345678" impulse_width="5" impulse_u="1.5":
     $remoteArgs = @(
         "--bitfile net_accel.bit"
         "--neurons={{neurons}}"
