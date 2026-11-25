@@ -128,7 +128,7 @@ run-ring neurons="1024" steps="5000" stride="0" dt="0.001" J="0.5" a="1.3" epsil
         "--impulse-u={{impulse_u}}"
         "--out=ring_result.npz"
     ) -join " "
-    ssh -i "{{ssh_key}}" {{board_target}} "cd {{board_dir}} && sudo /usr/local/bin/pynq-python cli.py run-ring $remoteArgs"
+    ssh -i "{{ssh_key}}" {{board_target}} "cd {{board_dir}} && sudo /usr/local/bin/pynq-python run_ring.py $remoteArgs"
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent "{{ring_result}}") | Out-Null
     scp -i "{{ssh_key}}" "{{board_target}}:{{board_dir}}/ring_result.npz" "{{ring_result}}"
@@ -137,7 +137,7 @@ run-ring neurons="1024" steps="5000" stride="0" dt="0.001" J="0.5" a="1.3" epsil
 # Plot the saved ring simulation .npz result locally
 [group("python")]
 plot-ring:
-    python python/cli.py plot "{{ring_result}}"
+    python scripts/plot-ring.py "{{ring_result}}"
 
 # Run host-side Python unit tests
 [group("python")]

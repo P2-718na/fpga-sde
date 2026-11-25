@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fhn-fpga"
+version = "0.1.0"
+description = "Board driver and graph packer for the PYNQ-Z2 FitzHugh-Nagumo network accelerator"
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+
+[project.scripts]
+fhn-run-ring = "run_ring:main"
+
+[tool.setuptools]
+py-modules = ["driver", "graph", "packing", "run_ring"]

@@ -6,8 +6,8 @@ HLS accelerator (`net_accel`) and host/board tooling for integrating stochastic 
 
 - `net-accel/` — Vitis HLS C++ implementation (`net_accel`, Q8.24 fixed-point RK4 + Gaussian CLT noise) and C testbench.
 - `vivado/` — Declarative Vivado CLI flow (`init_project.tcl`, `build_bitstream.tcl`) and source-controlled block design (`vivado/bd/design_1/design_1.bd` + `ui/`). Generated project files (`vivado/build/`) and exported artifacts (`vivado/export/net_accel.{bit,hwh}`) are gitignored.
-- `python/` — Python driver (`accel.py`), Q8.24 packing (`packing.py`), directed graph compiler (`graph.py`), CLI (`cli.py`), and host unit tests (`tests/`).
-- `scripts/` — Board setup (`setup_board.sh`) and HLS plotting helpers.
+- `python/` — Board Python driver (`driver.py`), Q8.24/edge packing (`packing.py`), directed graph compiler (`graph.py`), on-board runner (`run_ring.py`), and host unit tests (`tests/`).
+- `scripts/` — Board setup (`setup_board.sh`), ring plotting CLI (`plot-ring.py`), and HLS plotting helpers.
 - `board/` — PYNQ-Z2 constraints and board files.
 
 ## Hardware Build Workflow (HLS -> Vivado)
