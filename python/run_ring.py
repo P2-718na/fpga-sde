@@ -17,6 +17,8 @@ def _cmd_run_ring(args: argparse.Namespace) -> int:
 
     u0 = np.full(args.neurons, u_rest, dtype=np.float64)
     v0 = np.full(args.neurons, v_rest, dtype=np.float64)
+
+    # Fill initial impulse
     if args.impulse_width > 0:
         idx = np.arange(-args.impulse_width, args.impulse_width) % args.neurons
         u0[idx] = args.impulse_u

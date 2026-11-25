@@ -179,7 +179,10 @@ class GraphTests(unittest.TestCase):
 
     def test_directed_graph_with_isolated_node(self) -> None:
         # 4 nodes: 0 -> 1, 2 -> 1; nodes 0, 2, 3 have in-degree 0 and need self-loops.
-        edges, deg = pack_edges(4, np.array([[0, 1], [2, 1]]))
+        edges, deg = pack_edges(4, np.array([[0, 1], [2, 1]], dtype=np.int32))
+        edges_i64, deg_i64 = pack_edges(4, np.array([[0, 1], [2, 1]], dtype=np.int64))
+        np.testing.assert_array_equal(edges, edges_i64)
+        np.testing.assert_array_equal(deg, deg_i64)
         self.assertEqual(len(edges), 5)
         lasts = ((edges >> np.uint64(32)) & np.uint64(1)).astype(np.int64)
         self.assertEqual(int(lasts.sum()), 4)

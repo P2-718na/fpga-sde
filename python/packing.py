@@ -39,7 +39,7 @@ def q824_to_u32_reg(x: float) -> int:
     pynq's s_axilite RegisterMap rejects negative Python ints on unsigned
     32-bit fields, so signed two's-complement bits must be masked to uint32.
     """
-    return int(np.uint32(float_to_q824(float(x))))
+    return int(float_to_q824(float(x))) & 0xFFFFFFFF
 
 
 def pack_states(u: np.ndarray, v: np.ndarray) -> np.ndarray:
@@ -90,14 +90,14 @@ def validate_packed_edges(
         )
 
     if dst_sorted is not None:
-        dst = np.asarray(dst_sorted, dtype=np.int64)
+        dst = np.asarray(dst_sorted, dtype=np.intp)
         if dst.ndim != 1 or len(dst) != len(edges):
             raise ValueError("dst_sorted must be 1-D and match edge_words length")
         if len(dst) > 1 and not np.all(dst[:-1] <= dst[1:]):
             raise ValueError("dst_sorted must be sorted in non-decreasing order")
 
-        expected_neurons = np.arange(neuron_count, dtype=np.int64)
-        run_starts = np.concatenate((np.array([0], dtype=np.int64), last_indices[:-1] + 1))
+        expected_neurons = np.arange(neuron_count, dtype=np.intp)
+        run_starts = np.concatenate((np.array([0], dtype=np.intp), last_indices[:-1] + 1))
         if not (
             np.array_equal(dst[run_starts], expected_neurons)
             and np.array_equal(dst[last_indices], expected_neurons)
@@ -115,7 +115,7 @@ def pack_edges(neuron_count: int, edges: np.ndarray) -> tuple[np.ndarray, np.nda
     if neuron_count <= 0:
         raise ValueError("neuron_count must be positive")
 
-    edges_arr = np.asarray(edges, dtype=np.int64)
+    edges_arr = np.asarray(edges, dtype=np.intp)
     if edges_arr.size == 0:
         edges_arr = edges_arr.reshape(0, 2)
     elif edges_arr.ndim != 2 or edges_arr.shape[1] != 2:
@@ -127,8 +127,8 @@ def pack_edges(neuron_count: int, edges: np.ndarray) -> tuple[np.ndarray, np.nda
         src = edges_arr[:, 0]
         dst = edges_arr[:, 1]
     else:
-        src = np.empty(0, dtype=np.int64)
-        dst = np.empty(0, dtype=np.int64)
+        src = np.empty(0, dtype=np.intp)
+        dst = np.empty(0, dtype=np.intp)
 
     out_degrees = np.bincount(src, minlength=neuron_count).astype(np.uint32)
     in_degrees = np.bincount(dst, minlength=neuron_count)

@@ -12,9 +12,9 @@ def build_bidirectional_ring(neuron_count: int) -> tuple[np.ndarray, np.ndarray]
     if neuron_count <= 0:
         raise ValueError("neuron_count must be positive")
 
-    n = np.arange(neuron_count, dtype=np.int64)
-    src = np.empty(2 * neuron_count, dtype=np.int64)
-    dst = np.empty(2 * neuron_count, dtype=np.int64)
+    n = np.arange(neuron_count, dtype=np.intp)
+    src = np.empty(2 * neuron_count, dtype=np.intp)
+    dst = np.empty(2 * neuron_count, dtype=np.intp)
     src[0::2] = (n - 1) % neuron_count
     src[1::2] = (n + 1) % neuron_count
     dst[0::2] = n
