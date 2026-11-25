@@ -432,8 +432,9 @@ LOAD_BRAM:
     params.inv_e         = inv_e;
     params.sigma_sqrt_dt = sigma_sqrt_dt;
 
-TIMESTEP_LOOP:
     const int total_half_steps = iteration_count * 2;
+    // Label has to be right before loop or vitis wouldn't attach it
+TIMESTEP_LOOP:
     for (int i = 0; i < total_half_steps; ++i) {
         
         // Ping-pong state_a <-> state_b on each half-step; midpoint noise runs on even half-steps.
