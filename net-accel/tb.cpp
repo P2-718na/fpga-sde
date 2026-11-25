@@ -57,48 +57,50 @@ static EdgeBits pack_edge(
 // CPU reference: deterministic RK4 update (one step)
 // ============================================================
 
-struct Deriv {
-    fixed_t du;
-    fixed_t dv;
+struct RefState {
+    double u;
+    double v;
 };
 
-static Deriv cpu_fhn_deriv(
-    const State& s,
-    fixed_t I,
-    fixed_t a,
-    fixed_t inv_e
+struct RefDeriv {
+    double du;
+    double dv;
+};
+
+static RefDeriv cpu_fhn_deriv(
+    const RefState& s,
+    double I,
+    double a,
+    double inv_e
 )
 {
-    Deriv d;
-    const fixed_t u = s.u;
-    const fixed_t v = s.v;
-
-    d.du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * inv_e;
-    d.dv = u + a;
-
+    RefDeriv d;
+    d.du = (s.u - (s.u * s.u * s.u) / 3.0 - s.v + I) * inv_e;
+    d.dv = s.u + a;
     return d;
 }
 
 
+// Plain floating-point RK4 step (independent of fixed-point hardware factoring)
 static void cpu_rk4_step(
-    State* state,
+    RefState* state,
     int N,
-    fixed_t dt,
-    fixed_t J,
-    fixed_t a,
-    fixed_t inv_e
+    double dt,
+    double J,
+    double a,
+    double inv_e
 )
 {
-    const fixed_t dt_half  = dt * (fixed_t)0.5;
-    const fixed_t dt_third = dt * (fixed_t)(1.0 / 3.0);
-    const fixed_t dt_sixth = dt * (fixed_t)(1.0 / 6.0);
+    const double dt_half  = 0.5 * dt;
+    const double dt_third = dt / 3.0;
+    const double dt_sixth = dt / 6.0;
 
-    static Deriv k1[MAX_NEURONS];
-    static Deriv k2[MAX_NEURONS];
-    static Deriv k3[MAX_NEURONS];
-    static Deriv k4[MAX_NEURONS];
-    static State s_stage[MAX_NEURONS];
-    static State s_orig[MAX_NEURONS];
+    static RefDeriv k1[MAX_NEURONS];
+    static RefDeriv k2[MAX_NEURONS];
+    static RefDeriv k3[MAX_NEURONS];
+    static RefDeriv k4[MAX_NEURONS];
+    static RefState s_stage[MAX_NEURONS];
+    static RefState s_orig[MAX_NEURONS];
 
     for (int n = 0; n < N; ++n) {
         s_orig[n] = state[n];
@@ -108,9 +110,7 @@ static void cpu_rk4_step(
     for (int n = 0; n < N; ++n) {
         const int left  = (n - 1 + N) % N;
         const int right = (n + 1) % N;
-        fixed_t incoming_sum  = s_orig[left].u + s_orig[right].u;
-        fixed_t outgoing_term = (fixed_t)2 * s_orig[n].u;
-        fixed_t I = J * (incoming_sum - outgoing_term);
+        const double I = J * (s_orig[left].u + s_orig[right].u - 2.0 * s_orig[n].u);
 
         k1[n] = cpu_fhn_deriv(s_orig[n], I, a, inv_e);
         s_stage[n].u = s_orig[n].u + k1[n].du * dt_half;
@@ -121,9 +121,7 @@ static void cpu_rk4_step(
     for (int n = 0; n < N; ++n) {
         const int left  = (n - 1 + N) % N;
         const int right = (n + 1) % N;
-        fixed_t incoming_sum  = s_stage[left].u + s_stage[right].u;
-        fixed_t outgoing_term = (fixed_t)2 * s_stage[n].u;
-        fixed_t I = J * (incoming_sum - outgoing_term);
+        const double I = J * (s_stage[left].u + s_stage[right].u - 2.0 * s_stage[n].u);
 
         k2[n] = cpu_fhn_deriv(s_stage[n], I, a, inv_e);
     }
@@ -136,9 +134,7 @@ static void cpu_rk4_step(
     for (int n = 0; n < N; ++n) {
         const int left  = (n - 1 + N) % N;
         const int right = (n + 1) % N;
-        fixed_t incoming_sum  = s_stage[left].u + s_stage[right].u;
-        fixed_t outgoing_term = (fixed_t)2 * s_stage[n].u;
-        fixed_t I = J * (incoming_sum - outgoing_term);
+        const double I = J * (s_stage[left].u + s_stage[right].u - 2.0 * s_stage[n].u);
 
         k3[n] = cpu_fhn_deriv(s_stage[n], I, a, inv_e);
     }
@@ -151,14 +147,11 @@ static void cpu_rk4_step(
     for (int n = 0; n < N; ++n) {
         const int left  = (n - 1 + N) % N;
         const int right = (n + 1) % N;
-        fixed_t incoming_sum  = s_stage[left].u + s_stage[right].u;
-        fixed_t outgoing_term = (fixed_t)2 * s_stage[n].u;
-        fixed_t I = J * (incoming_sum - outgoing_term);
+        const double I = J * (s_stage[left].u + s_stage[right].u - 2.0 * s_stage[n].u);
 
         k4[n] = cpu_fhn_deriv(s_stage[n], I, a, inv_e);
     }
 
-    // Final update (matching fixed-point accumulation in HW)
     for (int n = 0; n < N; ++n) {
         state[n].u = s_orig[n].u + k1[n].du * dt_sixth + k2[n].du * dt_third + k3[n].du * dt_third + k4[n].du * dt_sixth;
         state[n].v = s_orig[n].v + k1[n].dv * dt_sixth + k2[n].dv * dt_third + k3[n].dv * dt_third + k4[n].dv * dt_sixth;
@@ -342,9 +335,10 @@ int main()
     // Build CPU reference initial state
     // --------------------------------------------------------
 
-    State reference[N];
+    RefState reference[N];
     for (int n = 0; n < N; ++n) {
-        reference[n] = unpack_state(state_in[n]);
+        State init_s = unpack_state(state_in[n]);
+        reference[n] = { (double)init_s.u, (double)init_s.v };
     }
 
 
@@ -379,13 +373,13 @@ int main()
         csv_local << std::fixed << std::setprecision(6);
     }
 
-    auto write_csv_step = [&](float t, const StateBits* hw_bits, const State* ref_states) {
+    auto write_csv_step = [&](float t, const StateBits* hw_bits, const RefState* ref_states) {
         auto write_to = [&](std::ostream& os) {
             os << t;
             for (int n = 0; n < N; ++n) {
                 State hw = unpack_state(hw_bits[n]);
                 os << "," << (float)hw.u << "," << (float)hw.v
-                   << "," << (float)ref_states[n].u << "," << (float)ref_states[n].v;
+                   << "," << ref_states[n].u << "," << ref_states[n].v;
             }
             os << "\n";
         };
@@ -404,8 +398,13 @@ int main()
 
     std::cout << "\nRunning " << TOTAL_STEPS << " steps...\n";
 
-    float max_err_u = 0.0f;
-    float max_err_v = 0.0f;
+    double max_err_u = 0.0;
+    double max_err_v = 0.0;
+
+    const double half_dt_d = 0.5 * (double)dt;
+    const double J_d       = (double)J;
+    const double a_d       = (double)a;
+    const double inv_e_d   = (double)inv_e;
 
     for (int step = 1; step <= TOTAL_STEPS; ++step) {
 
@@ -427,23 +426,17 @@ int main()
             (step == 1) // reseed on first step only
         );
 
-        // CPU reference step: two half-steps of size h = dt/2
-        const fixed_t h = dt * (fixed_t)0.5;
-        cpu_rk4_step(reference, N, h, J, a, inv_e);
-        cpu_rk4_step(reference, N, h, J, a, inv_e);
+        // CPU floating-point reference: two half-steps of size h = dt / 2
+        cpu_rk4_step(reference, N, half_dt_d, J_d, a_d, inv_e_d);
+        cpu_rk4_step(reference, N, half_dt_d, J_d, a_d, inv_e_d);
 
         const float sim_time = step * (float)dt;
 
         for (int n = 0; n < N; ++n) {
             State hw = unpack_state(state_out[n]);
 
-            const float hw_u  = (float)hw.u;
-            const float hw_v  = (float)hw.v;
-            const float ref_u = (float)reference[n].u;
-            const float ref_v = (float)reference[n].v;
-
-            const float err_u = std::fabs(hw_u - ref_u);
-            const float err_v = std::fabs(hw_v - ref_v);
+            const double err_u = std::fabs((double)hw.u - reference[n].u);
+            const double err_v = std::fabs((double)hw.v - reference[n].v);
 
             if (err_u > max_err_u) max_err_u = err_u;
             if (err_v > max_err_v) max_err_v = err_v;
@@ -476,7 +469,75 @@ int main()
               << "  max |u_hw - u_ref| = " << max_err_u << "\n"
               << "  max |v_hw - v_ref| = " << max_err_v << "\n";
 
-    bool passed = (max_err_u < 1e-3f) && (max_err_v < 1e-3f);
+    // --------------------------------------------------------
+    // Stiff-parameter regression test (epsilon = 0.01, |du| > 150)
+    // --------------------------------------------------------
+
+    constexpr int STIFF_STEPS = 1000;
+    const fixed_t stiff_dt    = (fixed_t)0.0001;
+    const fixed_t stiff_J     = (fixed_t)0.2;
+    const fixed_t stiff_a     = (fixed_t)1.1;
+    const fixed_t stiff_inv_e = (fixed_t)100.0;
+
+    StateBits stiff_in[N];
+    StateBits stiff_out[N];
+    RefState stiff_ref[N];
+
+    const double stiff_a_d = (double)stiff_a;
+    const double stiff_u_rest = -stiff_a_d;
+    const double stiff_v_rest = stiff_u_rest - (stiff_u_rest * stiff_u_rest * stiff_u_rest) / 3.0;
+
+    for (int n = 0; n < N; ++n) {
+        stiff_in[n] = pack_state((float)stiff_u_rest, (float)stiff_v_rest);
+        State init_s = unpack_state(stiff_in[n]);
+        stiff_ref[n] = { (double)init_s.u, (double)init_s.v };
+    }
+    stiff_in[0] = pack_state(1.5f, (float)stiff_v_rest);
+    {
+        State init_0 = unpack_state(stiff_in[0]);
+        stiff_ref[0] = { (double)init_0.u, (double)init_0.v };
+    }
+
+    net_accel(
+        stiff_in,
+        edges,
+        out_degrees,
+        stiff_out,
+        N,
+        E,
+        STIFF_STEPS,
+        stiff_dt,
+        stiff_J,
+        stiff_a,
+        stiff_inv_e,
+        (fixed_t)0.0,
+        seed,
+        true
+    );
+
+    const double stiff_half_dt_d = 0.5 * (double)stiff_dt;
+    const double stiff_J_d       = (double)stiff_J;
+    const double stiff_inv_e_d   = (double)stiff_inv_e;
+    for (int s = 0; s < STIFF_STEPS * 2; ++s) {
+        cpu_rk4_step(stiff_ref, N, stiff_half_dt_d, stiff_J_d, stiff_a_d, stiff_inv_e_d);
+    }
+
+    double max_stiff_err_u = 0.0;
+    double max_stiff_err_v = 0.0;
+    for (int n = 0; n < N; ++n) {
+        State hw = unpack_state(stiff_out[n]);
+        const double eu = std::fabs((double)hw.u - stiff_ref[n].u);
+        const double ev = std::fabs((double)hw.v - stiff_ref[n].v);
+        if (eu > max_stiff_err_u) max_stiff_err_u = eu;
+        if (ev > max_stiff_err_v) max_stiff_err_v = ev;
+    }
+
+    std::cout << "\nStiff epsilon=0.01 check over " << STIFF_STEPS << " steps vs double:\n"
+              << "  max |u_hw - u_dbl| = " << max_stiff_err_u << "\n"
+              << "  max |v_hw - v_dbl| = " << max_stiff_err_v << "\n";
+
+    bool passed = (max_err_u < 5e-3) && (max_err_v < 5e-3)
+               && (max_stiff_err_u < 1e-2) && (max_stiff_err_v < 1e-2);
 
     if (passed) {
         std::cout << "\nTEST PASSED\n";

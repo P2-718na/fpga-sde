@@ -1,7 +1,8 @@
+Properly make csim test file. Have the possibility of running different tests.
 Make sure edges are weighted
 Make single directional ring function for testing
 Optimize the DSP usage and code readability using a single function for all rk stages
 Optimize HP port usage
 Optimize Edge size
 Check running on board
-Fine-Tune quantized format
+Check parameter ranges and make sure they make sense. Optionally, Fine-Tune quantized format so that we have more integer bits.

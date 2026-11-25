@@ -2,6 +2,21 @@
 #include "rng.hpp"
 #include <hls_stream.h>
 
+#ifndef __SYNTHESIS__
+#include <cassert>
+#include <cstdlib>
+#include <iostream>
+
+static void check_fixed_range(const char* loc, const char* name, double val) {
+    if (val < -128.0 || val >= 128.0) {
+        std::cerr << "OVERFLOW in " << loc << " (" << name << "): " << val
+                  << " outside [-128, 128)\n";
+        assert(false && "fixed_t overflow");
+        std::abort();
+    }
+}
+#endif
+
 
 
 
@@ -23,19 +38,30 @@ static void generate_noise(
 static fixed_t compute_du(
     fixed_t u,
     fixed_t v,
-    fixed_t I,
-    fixed_t inv_e
+    fixed_t I
 ) {
 #pragma HLS INLINE
-    // du computtion has to be split in order to save DSPs
-    // Since it is used in rk_stage_intermediate and rk_stage_last
-    // we have this (inline) function to make things clearer to read.
+
+    // Additional overflow check.
+#ifndef __SYNTHESIS__
+    const double ud   = static_cast<double>(u);
+    const double vd   = static_cast<double>(v);
+    const double Id   = static_cast<double>(I);
+    const double u2d  = ud * ud;
+    const double u3d  = (u2d * ud) / 3.0;
+    const double rhsd = ud - u3d - vd + Id;
+    check_fixed_range("compute_du", "u^2", u2d);
+    check_fixed_range("compute_du", "u^3/3", u3d);
+    check_fixed_range("compute_du", "du", rhsd);
+#endif
+
+    // Split u^3 / 3 computation to save DSPs; inv_e is factored into h_*_over_e
+    // to prevent intermediate Q8.24 overflow when epsilon is small.
     static const fixed_t INV_3 = 1.0 / 3.0;
     const fixed_t u2   = u * u;
     const fixed_t u_3  = u * INV_3;
     const fixed_t u3_3 = u2 * u_3;
-    const fixed_t rhs  = u - u3_3 - v + I;
-    return rhs * inv_e;
+    return u - u3_3 - v + I;
 }
 
 static void integrate_rk_stage(
@@ -56,18 +82,18 @@ static void integrate_rk_stage(
         const State s_eval = state_stream.read();
         const fixed_t I = I_stream.read();
 
-        const fixed_t du = compute_du(s_eval.u, s_eval.v, I, params.inv_e);
+        const fixed_t du = compute_du(s_eval.u, s_eval.v, I);
         const fixed_t dv = s_eval.u + params.a;
 
         switch (stage) {
             case 0: {
                 State next_s;
-                next_s.u = s_eval.u + du * params.h_half;
+                next_s.u = s_eval.u + du * params.h_half_over_e;
                 next_s.v = s_eval.v + dv * params.h_half;
                 next_state_intermediate[n] = next_s;
 
                 State acc_s;
-                acc_s.u = s_eval.u + du * params.h_sixth;
+                acc_s.u = s_eval.u + du * params.h_sixth_over_e;
                 acc_s.v = s_eval.v + dv * params.h_sixth;
                 state_accumulator[n] = acc_s;
                 break;
@@ -75,12 +101,12 @@ static void integrate_rk_stage(
             case 1: {
                 const State s_base = y_0[n];
                 State next_s;
-                next_s.u = s_base.u + du * params.h_half;
+                next_s.u = s_base.u + du * params.h_half_over_e;
                 next_s.v = s_base.v + dv * params.h_half;
                 next_state_intermediate[n] = next_s;
 
                 State acc_s = state_accumulator[n];
-                acc_s.u += du * params.h_third;
+                acc_s.u += du * params.h_third_over_e;
                 acc_s.v += dv * params.h_third;
                 state_accumulator[n] = acc_s;
                 break;
@@ -88,12 +114,12 @@ static void integrate_rk_stage(
             case 2: default: {
                 const State s_base = y_0[n];
                 State next_s;
-                next_s.u = s_base.u + du * params.h;
+                next_s.u = s_base.u + du * params.h_over_e;
                 next_s.v = s_base.v + dv * params.h;
                 next_state_intermediate[n] = next_s;
 
                 State acc_s = state_accumulator[n];
-                acc_s.u += du * params.h_third;
+                acc_s.u += du * params.h_third_over_e;
                 acc_s.v += dv * params.h_third;
                 state_accumulator[n] = acc_s;
                 break;
@@ -118,12 +144,12 @@ static void integrate_rk_stage_final(
         const fixed_t I = I_stream.read();
         const fixed_t noise = noise_stream.read();
 
-        const fixed_t du = compute_du(s_eval.u, s_eval.v, I, params.inv_e);
+        const fixed_t du = compute_du(s_eval.u, s_eval.v, I);
         const fixed_t dv = s_eval.u + params.a;
 
         State acc_s = state_accumulator[n];
         
-        acc_s.u += du * params.h_sixth + (add_noise ? noise : (fixed_t)0);
+        acc_s.u += du * params.h_sixth_over_e + (add_noise ? noise : (fixed_t)0);
         acc_s.v += dv * params.h_sixth;
         state_accumulator[n] = acc_s;
     }
@@ -138,6 +164,10 @@ static void compute_flows(
     hls::stream<fixed_t>& I_stream,
     hls::stream<State>& state_stream
 ) {
+#ifndef __SYNTHESIS__
+    double incoming_sum_d = 0.0;
+#endif
+
     fixed_t incoming_sum = 0;
     int curr_neuron = 0;
 
@@ -150,12 +180,30 @@ static void compute_flows(
         uint32_t from = bits.range(31, 0);
         bool last     = bits[32];
 
+#ifndef __SYNTHESIS__
+        incoming_sum_d += static_cast<double>(state_curr[from].u);
+        check_fixed_range("compute_flows", "incoming_sum", incoming_sum_d);
+#endif
+
         incoming_sum += state_curr[from].u;
 
         // EVERY Neuron MUST have a last edge. We force this by making every neuron connected to itself.
         // The interaction terms of it with itself cancel out in this branch...
         if (last) {
             State s = state_curr[curr_neuron];
+
+// Additional overflow checks.
+// These probably won't trigger with the simple ring network
+// But it's best to have them just in case
+#ifndef __SYNTHESIS__
+            const double deg_d      = static_cast<double>(static_cast<uint32_t>(out_degrees[curr_neuron]));
+            const double outgoing_d = deg_d * static_cast<double>(s.u);
+            const double diff_d     = incoming_sum_d - outgoing_d;
+            check_fixed_range("compute_flows", "out_degree", deg_d);
+            check_fixed_range("compute_flows", "outgoing_term", outgoing_d);
+            check_fixed_range("compute_flows", "incoming_sum - outgoing_term", diff_d);
+            check_fixed_range("compute_flows", "I", static_cast<double>(params.J) * diff_d);
+#endif
             fixed_t outgoing_term = (fixed_t)out_degrees[curr_neuron] * s.u;
             fixed_t I = params.J * (incoming_sum - outgoing_term);
 
@@ -165,6 +213,10 @@ static void compute_flows(
 
             incoming_sum = 0;
             curr_neuron++;
+
+#ifndef __SYNTHESIS__
+            incoming_sum_d = 0.0;
+#endif
         }
     }
 }
@@ -420,17 +472,20 @@ LOAD_BRAM:
     }
 
     ModelParams params;
-    const fixed_t h = dt * (fixed_t)0.5;
-    params.neuron_count  = neuron_count;
-    params.edge_count    = edge_count;
-    params.h             = h;
-    params.h_half        = h * (fixed_t)0.5;
-    params.h_third       = h * (fixed_t)(1.0 / 3.0);
-    params.h_sixth       = h * (fixed_t)(1.0 / 6.0);
-    params.J             = J;
-    params.a             = a;
-    params.inv_e         = inv_e;
-    params.sigma_sqrt_dt = sigma_sqrt_dt;
+    const ap_fixed<64, 16> dt_over_e = dt * inv_e;
+    params.neuron_count   = neuron_count;
+    params.edge_count     = edge_count;
+    params.h              = dt * (fixed_t)0.5;
+    params.h_half         = dt * (fixed_t)0.25;
+    params.h_third        = dt * (fixed_t)(1.0 / 6.0);
+    params.h_sixth        = dt * (fixed_t)(1.0 / 12.0);
+    params.h_over_e       = dt_over_e * (fixed_t)0.5;
+    params.h_half_over_e  = dt_over_e * (fixed_t)0.25;
+    params.h_third_over_e = dt_over_e * (fixed_t)(1.0 / 6.0);
+    params.h_sixth_over_e = dt_over_e * (fixed_t)(1.0 / 12.0);
+    params.J              = J;
+    params.a              = a;
+    params.sigma_sqrt_dt  = sigma_sqrt_dt;
 
     const int total_half_steps = iteration_count * 2;
     // Label has to be right before loop or vitis wouldn't attach it

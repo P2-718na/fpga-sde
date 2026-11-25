@@ -38,12 +38,16 @@ struct ModelParams {
     int neuron_count;
     int edge_count;
     fixed_t h;
+    // We cannot get rid of these as they are needed to compute dv
     fixed_t h_half;
     fixed_t h_third;
     fixed_t h_sixth;
+    fixed_t h_over_e;
+    fixed_t h_half_over_e;
+    fixed_t h_third_over_e;
+    fixed_t h_sixth_over_e;
     fixed_t J;
     fixed_t a;
-    fixed_t inv_e;
     fixed_t sigma_sqrt_dt;
 };
 
