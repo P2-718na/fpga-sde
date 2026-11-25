@@ -29,6 +29,34 @@ net-accel/.Xil
 net-accel/compile_commands.json
 net-accel/build
 net-accel/trajectory.csv
+net-accel/.hls.failed
+
+# Vivado & FPGA build artifacts (keep only source-controlled BD + UI layout)
+vivado/build/*
+!vivado/build/.gitkeep
+vivado/export/
+vivado/*.jou
+vivado/*.log
+vivado/*.str
+vivado/bd/design_1/*
+!vivado/bd/design_1/design_1.bd
+!vivado/bd/design_1/ui/
+vivado/bd/design_1/ui/*
+!vivado/bd/design_1/ui/*.ui
+dfx_runtime.txt
+NA/
+*.jou
+*.str
+*.bit
+*.hwh
+*.xclbin
+
+# Local build & simulation outputs
+/build
+/export
+*.npz
+python/*.egg-info/
+python/build/
 ##
 
 sde-accel/dfx_runtime.txt
