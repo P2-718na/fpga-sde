@@ -20,7 +20,8 @@ def _cmd_run_ring(args: argparse.Namespace) -> int:
 
     # Fill initial impulse
     if args.impulse_width > 0:
-        idx = np.arange(-args.impulse_width, args.impulse_width) % args.neurons
+        n = args.neurons
+        idx = np.arange(n // 2 - args.impulse_width, n // 2 + args.impulse_width) % n
         u0[idx] = args.impulse_u
 
     edges_packed, out_degrees = build_bidirectional_ring(args.neurons)

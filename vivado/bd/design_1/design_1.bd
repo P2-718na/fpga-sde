@@ -2303,7 +2303,7 @@
       },
       "net_accel_0": {
         "vlnv": "xilinx.com:hls:net_accel:1.0",
-        "ip_revision": "2114889519",
+        "ip_revision": "2114889737",
         "xci_name": "design_1_net_accel_0_0",
         "xci_path": "ip\\design_1_net_accel_0_0\\design_1_net_accel_0_0.xci",
         "inst_hier_path": "net_accel_0",
