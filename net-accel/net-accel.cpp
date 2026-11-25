@@ -20,6 +20,24 @@ static void generate_noise(
     }
 }
 
+static fixed_t compute_du(
+    fixed_t u,
+    fixed_t v,
+    fixed_t I,
+    fixed_t inv_e
+) {
+#pragma HLS INLINE
+    // du computtion has to be split in order to save DSPs
+    // Since it is used in rk_stage_intermediate and rk_stage_last
+    // we have this (inline) function to make things clearer to read.
+    static const fixed_t INV_3 = 1.0 / 3.0;
+    const fixed_t u2   = u * u;
+    const fixed_t u_3  = u * INV_3;
+    const fixed_t u3_3 = u2 * u_3;
+    const fixed_t rhs  = u - u3_3 - v + I;
+    return rhs * inv_e;
+}
+
 static void integrate_rk_stage(
     int stage,
     hls::stream<State>& state_stream,
@@ -38,11 +56,8 @@ static void integrate_rk_stage(
         const State s_eval = state_stream.read();
         const fixed_t I = I_stream.read();
 
-        const fixed_t u = s_eval.u;
-        const fixed_t v = s_eval.v;
-
-        const fixed_t du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * params.inv_e;
-        const fixed_t dv = u + params.a;
+        const fixed_t du = compute_du(s_eval.u, s_eval.v, I, params.inv_e);
+        const fixed_t dv = s_eval.u + params.a;
 
         switch (stage) {
             case 0: {
@@ -103,11 +118,8 @@ static void integrate_rk_stage_final(
         const fixed_t I = I_stream.read();
         const fixed_t noise = noise_stream.read();
 
-        const fixed_t u = s_eval.u;
-        const fixed_t v = s_eval.v;
-
-        const fixed_t du = (u - u*u*u*(fixed_t)(1.0/3.0) - v + I) * params.inv_e;
-        const fixed_t dv = u + params.a;
+        const fixed_t du = compute_du(s_eval.u, s_eval.v, I, params.inv_e);
+        const fixed_t dv = s_eval.u + params.a;
 
         State acc_s = state_accumulator[n];
         
@@ -200,6 +212,8 @@ static void rk_stage_intermediate(
     );
 }
 
+// We have a separate function for stage_final because here we also need to generate_noise inside the dataflow
+// and vitis doesn't allow to enable/disable dataflow paths based on a variable.
 static void rk_stage_final(
     const State curr_state_intermediate[MAX_NEURONS],
     State state_accumulator[MAX_NEURONS],
@@ -245,131 +259,70 @@ static void rk_stage_final(
 }
 
 // =================================================================================================================
-// Zero-Copy RK4 Buffer Liveness & Routing Table:
-// Stage | state_curr            | rk_buffer_a           | rk_buffer_b                       | rk_buffer_c (output)
-// ------+-----------------------+-----------------------+-----------------------------------+----------------------
-//   0   | Read y_0              | Write y_0 + h/2*k1    | Init  y_0 + h/6*k1                | (idle)
-//   1   | Read y_0 (base)       | Read  y_0 + h/2*k1    | Acc   + h/3*k2                    | Write y_0 + h/2*k2
-//   2   | Read y_0 (base)       | Write y_0 + h*k3      | Acc   + h/3*k3                    | Read  y_0 + h/2*k2
-//   3   | (idle)                | Read  y_0 + h*k3      | Final + h/6*k4 + noise = y_half   | (idle)
-//   4   | (idle)                | Write y_half + h/2*k1 | Read  y_half (base & eval)        | Init  y_half + h/6*k1
-//   5   | Write y_half + h/2*k2 | Read  y_half + h/2*k1 | Read  y_half (base)               | Acc   + h/3*k2
-//   6   | Read  y_half + h/2*k2 | Write y_half + h*k3   | Read  y_half (base)               | Acc   + h/3*k3
-//   7   | (idle)                | Read  y_half + h*k3   | Read  y_half (base)               | Final + h/6*k4 = y_out
+// Zero-Copy RK4 Half-Step Buffer Liveness & Routing Table (step size h = dt / 2):
+// Stage | state_curr            | rk_buffer_a        | rk_buffer_b        | state_out (accumulator)
+// ------+-----------------------+--------------------+--------------------+----------------------------------
+//   0   | Read y_0              | Write y_0 + h/2*k1 | (idle)             | Init  y_0 + h/6*k1
+//   1   | Read y_0 (base)       | Read  y_0 + h/2*k1 | Write y_0 + h/2*k2 | Acc   + h/3*k2
+//   2   | Read y_0 (base)       | Write y_0 + h*k3   | Read  y_0 + h/2*k2 | Acc   + h/3*k3
+//   3   | (idle)                | Read  y_0 + h*k3   | (idle)             | Final + h/6*k4 (+ noise if even)
 // =================================================================================================================
-static void timestep(
+static void rk4_half_step(
     State state_curr[MAX_NEURONS],
-    State rk_buffer_c[MAX_NEURONS],
+    State state_out[MAX_NEURONS],
     State rk_buffer_a[MAX_NEURONS],
     State rk_buffer_b[MAX_NEURONS],
     const EdgeBits* edge_list,
     const NeuronDegree out_degrees[MAX_NEURONS],
     const ModelParams& params,
-    ap_uint<32> rng_state[GAUSS_UNIFORMS]
+    ap_uint<32> rng_state[GAUSS_UNIFORMS],
+    bool add_noise
 ) {
-    // -------------------------------------------------------------------------
-    // Step 1: First RK4 half-step (step size h), with noise added at stage 3.
-    // Base is state_curr; accumulated directly into rk_buffer_b (holds y_half).
-    // -------------------------------------------------------------------------
-
-    // Stage 0: y_0 = state_curr, eval state_curr, write next to rk_buffer_a, init rk_buffer_b
+    // Stage 0: y_0 = state_curr, eval state_curr, write next to rk_buffer_a, init state_out
     rk_stage_intermediate(
         0,
         state_curr,          // y_0
         state_curr,          // curr_state_intermediate
         rk_buffer_a,         // next_state_intermediate
-        rk_buffer_b,         // state_accumulator (holding y_half)
+        state_out,           // state_accumulator
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 1: y_0 = state_curr, eval rk_buffer_a, write next to rk_buffer_c, acc to rk_buffer_b
+    // Stage 1: y_0 = state_curr, eval rk_buffer_a, write next to rk_buffer_b, acc to state_out
     rk_stage_intermediate(
         1,
         state_curr,          // y_0
         rk_buffer_a,         // curr_state_intermediate
-        rk_buffer_c,         // next_state_intermediate
-        rk_buffer_b,         // state_accumulator (holding y_half)
+        rk_buffer_b,         // next_state_intermediate
+        state_out,           // state_accumulator
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 2: y_0 = state_curr, eval rk_buffer_c, write next to rk_buffer_a, acc to rk_buffer_b
+    // Stage 2: y_0 = state_curr, eval rk_buffer_b, write next to rk_buffer_a, acc to state_out
     rk_stage_intermediate(
         2,
         state_curr,          // y_0
-        rk_buffer_c,         // curr_state_intermediate
+        rk_buffer_b,         // curr_state_intermediate
         rk_buffer_a,         // next_state_intermediate
-        rk_buffer_b,         // state_accumulator (holding y_half)
+        state_out,           // state_accumulator
         edge_list,
         out_degrees,
         params
     );
 
-    // Stage 3: eval rk_buffer_a, add noise, finalize rk_buffer_b -> holds y_half
+    // Stage 3: eval rk_buffer_a, finalize state_out (adding midpoint noise on even half-steps)
     rk_stage_final(
         rk_buffer_a,         // curr_state_intermediate
-        rk_buffer_b,         // state_accumulator (holding y_half)
+        state_out,           // state_accumulator
         edge_list,
         out_degrees,
         params,
         rng_state,
-        true                 // add_noise = true
-    );
-
-    // -------------------------------------------------------------------------
-    // Step 2: Second RK4 half-step (step size h), without noise.
-    // Base is rk_buffer_b (y_half); accumulated directly into rk_buffer_c (final).
-    // state_curr is dead after Step 1, so it is reused as intermediate scratchpad.
-    // -------------------------------------------------------------------------
-
-    // Stage 4 (0): y_0 = rk_buffer_b, eval rk_buffer_b, write next to rk_buffer_a, init rk_buffer_c
-    rk_stage_intermediate(
-        0,
-        rk_buffer_b,         // y_0 (y_half)
-        rk_buffer_b,         // curr_state_intermediate (y_half)
-        rk_buffer_a,         // next_state_intermediate
-        rk_buffer_c,         // state_accumulator (final output)
-        edge_list,
-        out_degrees,
-        params
-    );
-
-    // Stage 5 (1): y_0 = rk_buffer_b, eval rk_buffer_a, write next to state_curr, acc to rk_buffer_c
-    rk_stage_intermediate(
-        1,
-        rk_buffer_b,         // y_0 (y_half)
-        rk_buffer_a,         // curr_state_intermediate
-        state_curr,          // next_state_intermediate (scratch)
-        rk_buffer_c,         // state_accumulator (final output)
-        edge_list,
-        out_degrees,
-        params
-    );
-
-    // Stage 6 (2): y_0 = rk_buffer_b, eval state_curr, write next to rk_buffer_a, acc to rk_buffer_c
-    rk_stage_intermediate(
-        2,
-        rk_buffer_b,         // y_0 (y_half)
-        state_curr,          // curr_state_intermediate
-        rk_buffer_a,         // next_state_intermediate
-        rk_buffer_c,         // state_accumulator (final output)
-        edge_list,
-        out_degrees,
-        params
-    );
-
-    // Stage 7 (3): eval rk_buffer_a, finalize rk_buffer_c, without noise
-    rk_stage_final(
-        rk_buffer_a,         // curr_state_intermediate
-        rk_buffer_c,         // state_accumulator (final output)
-        edge_list,
-        out_degrees,
-        params,
-        rng_state,
-        false                // add_noise = false
+        add_noise
     );
 }
 
@@ -429,6 +382,7 @@ void net_accel(
     // basically with these things in BRAM, we avoid
     // 1) random reads for state, which would make DRAM bus really slow
     // 2) We leave the DRAM bus free to fetch the (very long) sequential edge data, without intermittent halts to eftch state and/or degree
+    // 3) Lutram would have zero latency, but it would fit way less.
 
     static ap_uint<32> rng_state[GAUSS_UNIFORMS] = {
         0x12345678,
@@ -442,7 +396,7 @@ void net_accel(
     };
     #pragma HLS ARRAY_PARTITION variable=rng_state complete
 
-    RESEED:
+RESEED:
     if(reseed) {
         rng_state[0] = seed;
         rng_state[1] = seed ^ 0x9E3779B9;
@@ -454,7 +408,7 @@ void net_accel(
         rng_state[7] = seed ^ 0xFEEDFACE;
     }
 
-    LOAD_BRAM:
+LOAD_BRAM:
     for (int n = 0; n < neuron_count; ++n) { // We don't wanna use != operator in for in hls
     #pragma HLS PIPELINE II=1
 
@@ -465,9 +419,8 @@ void net_accel(
         out_degrees_cache[n] = out_degrees_in[n];
     }
 
-    const fixed_t h = dt * (fixed_t)0.5;
-
     ModelParams params;
+    const fixed_t h = dt * (fixed_t)0.5;
     params.neuron_count  = neuron_count;
     params.edge_count    = edge_count;
     params.h             = h;
@@ -479,12 +432,15 @@ void net_accel(
     params.inv_e         = inv_e;
     params.sigma_sqrt_dt = sigma_sqrt_dt;
 
-    TIMESTEP_LOOP:
-    for (int t = 0; t < iteration_count; ++t) {
-
-        // We want to swap BRAM arrays every timestep (pingpong buffering)
-        if ((t & 1) == 0) {
-            timestep(
+TIMESTEP_LOOP:
+    const int total_half_steps = iteration_count * 2;
+    for (int i = 0; i < total_half_steps; ++i) {
+        
+        // Ping-pong state_a <-> state_b on each half-step; midpoint noise runs on even half-steps.
+        // Important: we have to do the ping-pong by switching the arrays in the function call like this.
+        // If we reassigned arrays using references (like we did before), the implementation would break.
+        if (i % 2 == 0) {
+            rk4_half_step(
                 state_a,
                 state_b,
                 rk_buffer_a,
@@ -492,28 +448,32 @@ void net_accel(
                 edge_list,
                 out_degrees_cache,
                 params,
-                rng_state
+                rng_state,
+                true // Add noise
             );
-        } else {
-            timestep(
-                state_b,
-                state_a,
-                rk_buffer_a,
-                rk_buffer_b,
-                edge_list,
-                out_degrees_cache,
-                params,
-                rng_state
-            );
+            continue;
         }
+
+        rk4_half_step(
+            state_b,
+            state_a,
+            rk_buffer_a,
+            rk_buffer_b,
+            edge_list,
+            out_degrees_cache,
+            params,
+            rng_state,
+            false // Don't add noise
+        );
     }
 
-    // Write back final state to DRAM
-    STORE_STATE:
+    
+STORE_STATE:
+    // Write back final state to DRAM (even number of half-steps always lands in state_a)
     for (int n = 0; n < neuron_count; ++n) {
     #pragma HLS PIPELINE II=1
 
-        const State s = ((iteration_count & 1) == 0) ? state_a[n] : state_b[n];
+        const State s = state_a[n];
 
         StateBits bits = 0;
         bits.range(31, 0)  = s.u.range(31, 0);
