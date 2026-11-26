@@ -1,8 +1,8 @@
-Properly make csim test file. Have the possibility of running different tests.
-Make sure edges are weighted
-Make single directional ring function for testing
+Make sure edges are weighted, Optimize Edge size
 Optimize the DSP usage and code readability using a single function for all rk stages
 Optimize HP port usage
-Optimize Edge size
-Check running on board
-Check parameter ranges and make sure they make sense. Optionally, Fine-Tune quantized format so that we have more integer bits.
+Check parameter ranges and make sure they make sense. Make sure the "epsilon and dt" problem is fixed.
+Fine-tune quantized format to optimize bram utilization. 
+Remake csim test file properly. Have the possibility of running different tests.
+Add testing of 1-directional ring
+Feature: have unlimited integration steps until we tell it to stop.
