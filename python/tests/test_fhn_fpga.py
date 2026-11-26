@@ -261,7 +261,7 @@ class AcceleratorDriverTests(unittest.TestCase):
         self.assertTrue(all(buf.freed for buf in allocated))
 
     def test_cma_address_window_guard(self) -> None:
-        overlay_cls, alloc_fn, allocated, _ = self._make_mock_env(base_phys=0x1800_0000)
+        overlay_cls, alloc_fn, allocated, _ = self._make_mock_env(base_phys=0x2000_0000)
         edges, deg = build_bidirectional_ring(4)
         with FHNAccelerator(
             "dummy.bit", _overlay_cls=overlay_cls, _allocate_fn=alloc_fn

@@ -21,7 +21,7 @@ from packing import (
 MAX_NEURONS = 12288
 
 # design_1.bd maps smartconnect_0 to HP0/HP1/HP2 across [0x0000_0000, 0x1800_0000) (384 MB).
-MAX_SMARTCONNECT_PHYS_ADDR = 0x1800_0000
+MAX_SMARTCONNECT_PHYS_ADDR = 0x2000_0000
 
 
 class FHNAccelerator:

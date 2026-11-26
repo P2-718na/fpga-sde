@@ -40,9 +40,6 @@ vivado/*.log
 vivado/*.str
 vivado/bd/design_1/*
 !vivado/bd/design_1/design_1.bd
-!vivado/bd/design_1/ui/
-vivado/bd/design_1/ui/*
-!vivado/bd/design_1/ui/*.ui
 dfx_runtime.txt
 NA/
 *.jou
