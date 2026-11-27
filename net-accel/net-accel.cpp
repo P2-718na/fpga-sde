@@ -127,14 +127,14 @@ static void run_rk_stage(
             }
 
             State next_s;
-            next_s.u = s_base.u + du * cfg.a_u;
-            next_s.v = s_base.v + dv * cfg.a_v;
+            next_s.u = s_base.u + du * cfg.base_dt_u;
+            next_s.v = s_base.v + dv * cfg.base_dt_v;
 
             // decide wether to start accumulating from y_0 or from the latest accumulator
             const State acc_base = cfg.is_init ? s_base : s_acc;
             State acc_next;
-            acc_next.u = acc_base.u + du * cfg.b_u + noise;
-            acc_next.v = acc_base.v + dv * cfg.b_v;
+            acc_next.u = acc_base.u + du * cfg.acc_dt_u + noise;
+            acc_next.v = acc_base.v + dv * cfg.acc_dt_v;
 
             mem.state[acc_bank][curr_neuron]       = acc_next;
             // On stage 3 (is_final), mirror acc_next.u into rk_u[0] ready for stage 0 of the next half-step.
@@ -177,7 +177,7 @@ static void integrate(
 
     // 4-stage RK4 Butcher tableau + rk_u ping-pong bank schedule
     const StageConfig tableau[4] = {
-        //   u_in, u_out, init, final, butcher_a_u, butcher_a_v,  butcher_b_u, butcher_b_v
+        //   u_in, u_out, init, final, base_dt_u, base_dt_v, acc_dt_u, acc_dt_v
         { BANK_A, BANK_B, true,  false, h_over_2e, h_over_2, h_over_6e, h_over_6 }, // k1
         { BANK_B, BANK_A, false, false, h_over_2e, h_over_2, h_over_3e, h_over_3 }, // k2
         { BANK_A, BANK_B, false, false, h_over_e,  h,        h_over_3e, h_over_3 }, // k3

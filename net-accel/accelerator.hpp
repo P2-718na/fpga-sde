@@ -55,10 +55,10 @@ struct StageConfig {
     Bank    next_u_bank; // rk_u[] bank written for next stage
     bool    is_init;     // Stage 0: evaluate at y_0 and init accumulator from y_0
     bool    is_final;    // Stage 3: finalize half-step & mirror acc.u -> rk_u[BANK_A]
-    fixed_t a_u;         // Next-stage step weight / epsilon
-    fixed_t a_v;         // Next-stage step weight
-    fixed_t b_u;         // Quadrature weight / epsilon
-    fixed_t b_v;         // Quadrature weight
+    fixed_t base_dt_u;   // Effective dt / epsilon step to reach the next intermediate trial stage
+    fixed_t base_dt_v;   // Effective dt step to reach the next intermediate trial stage
+    fixed_t acc_dt_u;    // Effective dt / epsilon weight accumulated into the end-of-step quadrature sum
+    fixed_t acc_dt_v;    // Effective dt weight accumulated into the end-of-step quadrature sum
 };
 
 // On-chip BRAM workspace organized for strict 1R1W II=1 access
