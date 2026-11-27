@@ -182,10 +182,10 @@ int main()
         const fixed_t sigma_sqrt_dt = (fixed_t).05;
     */
 
-    const fixed_t dt    = (fixed_t)0.01;
-    const fixed_t J     = (fixed_t)2.0;
-    const fixed_t a     = (fixed_t)1.02;
-    const fixed_t inv_e = (fixed_t)10.0;
+    const fixed_t dt        = (fixed_t)0.01;
+    const fixed_t J         = (fixed_t)2.0;
+    const fixed_t a         = (fixed_t)1.02;
+    const fixed_t dt_over_e = (fixed_t)(0.01 / 0.1);
 
     // Disable noise for deterministic comparison
     const fixed_t sigma_sqrt_dt = (fixed_t)0.0;
@@ -404,7 +404,7 @@ int main()
     const double half_dt_d = 0.5 * (double)dt;
     const double J_d       = (double)J;
     const double a_d       = (double)a;
-    const double inv_e_d   = (double)inv_e;
+    const double inv_e_d   = 10.0;
 
     for (int step = 1; step <= TOTAL_STEPS; ++step) {
 
@@ -420,7 +420,7 @@ int main()
             dt,
             J,
             a,
-            inv_e,
+            dt_over_e,
             sigma_sqrt_dt,
             seed,
             (step == 1) // reseed on first step only
@@ -474,10 +474,10 @@ int main()
     // --------------------------------------------------------
 
     constexpr int STIFF_STEPS = 400;
-    const fixed_t stiff_dt    = (fixed_t)0.0001;
-    const fixed_t stiff_J     = (fixed_t)0.2;
-    const fixed_t stiff_a     = (fixed_t)1.1;
-    const fixed_t stiff_inv_e = (fixed_t)100.0;
+    const fixed_t stiff_dt        = (fixed_t)0.0001;
+    const fixed_t stiff_J         = (fixed_t)0.2;
+    const fixed_t stiff_a         = (fixed_t)1.1;
+    const fixed_t stiff_dt_over_e = (fixed_t)(0.0001 / 0.01);
 
     static StateBits stiff_in[2000] = {};
     static StateBits stiff_out[2000] = {};
@@ -513,7 +513,7 @@ int main()
         stiff_dt,
         stiff_J,
         stiff_a,
-        stiff_inv_e,
+        stiff_dt_over_e,
         (fixed_t)0.0,
         seed,
         true
@@ -521,7 +521,7 @@ int main()
 
     const double stiff_half_dt_d = 0.5 * (double)stiff_dt;
     const double stiff_J_d       = (double)stiff_J;
-    const double stiff_inv_e_d   = (double)stiff_inv_e;
+    const double stiff_inv_e_d   = 100.0;
     for (int s = 0; s < STIFF_STEPS * 2; ++s) {
         cpu_rk4_step(stiff_ref, N, stiff_half_dt_d, stiff_J_d, stiff_a_d, stiff_inv_e_d);
     }
