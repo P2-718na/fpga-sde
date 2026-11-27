@@ -1,4 +1,4 @@
-"""On-board PYNQ driver for the net_accel FitzHugh-Nagumo HLS IP. This file is AI generated."""
+"""On-board PYNQ driver for the net_accel FitzHugh-Nagumo HLS IP. Generated with Antigravity (Google DeepMind)."""
 
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ class FHNAccelerator:
             raise ValueError("dt > 0, epsilon > 0, and sigma >= 0 are required")
 
         n_edges = len(edges_arr)
-        inv_e = 1.0 / epsilon
+        dt_over_e = dt / epsilon
         sigma_sqrt_dt = sigma * math.sqrt(dt)
 
         record_traj = 0 < stride < steps
@@ -168,7 +168,7 @@ class FHNAccelerator:
             rm.dt = q824_to_u32_reg(dt)
             rm.J = q824_to_u32_reg(J)
             rm.a = q824_to_u32_reg(a)
-            rm.inv_e = q824_to_u32_reg(inv_e)
+            rm.dt_over_e = q824_to_u32_reg(dt_over_e)
             rm.sigma_sqrt_dt = q824_to_u32_reg(sigma_sqrt_dt)
             rm.seed = int(seed & 0xFFFFFFFF)
 

@@ -1,4 +1,4 @@
-"""On-board CLI for running bidirectional ring benchmarks on the PYNQ FPGA. This file is AI generated."""
+"""On-board CLI for running bidirectional ring benchmarks on the PYNQ FPGA. Generated with Antigravity (Google DeepMind)."""
 
 from __future__ import annotations
 

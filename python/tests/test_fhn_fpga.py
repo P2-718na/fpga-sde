@@ -1,4 +1,4 @@
-"""Host-side unit tests for Q8.24 packing, graph compilation, and driver registers. This file is AI generated"""
+"""Host-side unit tests for Q8.24 packing, graph compilation, and driver registers. Generated with Antigravity (Google DeepMind)."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ class _StrictRegisterMap:
         "dt",
         "J",
         "a",
-        "inv_e",
+        "dt_over_e",
         "sigma_sqrt_dt",
         "seed",
         "reseed",
@@ -211,6 +211,7 @@ class AcceleratorDriverTests(unittest.TestCase):
                     "iteration_count": rm.iteration_count,
                     "reseed": rm.reseed,
                     "J": rm.J,
+                    "dt_over_e": rm.dt_over_e,
                 }
             )
             in_buf = next(b for b in allocated if b.physical_address == runs[-1]["state_in"])
@@ -248,6 +249,7 @@ class AcceleratorDriverTests(unittest.TestCase):
         self.assertEqual([r["iteration_count"] for r in runs], [2, 2, 1])
         self.assertEqual([r["reseed"] for r in runs], [1, 0, 0])
         self.assertEqual(runs[0]["J"], q824_to_u32_reg(-0.25))
+        self.assertEqual(runs[0]["dt_over_e"], q824_to_u32_reg(1e-3 / 0.1))
 
         # Ping-pong verification: output buffer of step i becomes input buffer of step i+1
         self.assertEqual(runs[1]["state_in"], runs[0]["state_out"])
@@ -302,6 +304,17 @@ class AcceleratorDriverTests(unittest.TestCase):
             )
         self.assertEqual(len(runs), 1)
         self.assertEqual(res["u_final"].shape, (4,))
+        self.assertTrue(all(buf.freed for buf in allocated))
+
+    def test_stiff_epsilon_uses_dt_over_e_without_q824_overflow(self) -> None:
+        overlay_cls, alloc_fn, allocated, runs = self._make_mock_env()
+        edges, deg = build_bidirectional_ring(4)
+        with FHNAccelerator(
+            "dummy.bit", _overlay_cls=overlay_cls, _allocate_fn=alloc_fn
+        ) as accel:
+            accel.run(np.zeros(4), np.zeros(4), edges, deg, steps=1, dt=1e-6, epsilon=1e-4)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0]["dt_over_e"], q824_to_u32_reg(1e-6 / 1e-4))
         self.assertTrue(all(buf.freed for buf in allocated))
 
 

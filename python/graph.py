@@ -1,4 +1,4 @@
-"""Directed graph compiler for the FPGA edge-list and out-degree buffers. This file is AI generated."""
+"""Directed graph compiler for the FPGA edge-list and out-degree buffers. Generated with Antigravity (Google DeepMind)."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Fixed-point Q8.24 (ap_fixed<32,8>) conversions and 64-bit state/edge packing. This file is AI generated."""
+"""Fixed-point Q8.24 (ap_fixed<32,8>) conversions and 64-bit state/edge packing. Generated with Antigravity (Google DeepMind)."""
 
 from __future__ import annotations
 
