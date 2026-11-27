@@ -1,8 +1,10 @@
-Make sure edges are weighted, Optimize Edge size
-Optimize the DSP usage and code readability using a single function for all rk stages
-Optimize HP port usage
-Check parameter ranges and make sure they make sense. Make sure the "epsilon and dt" problem is fixed.
-Fine-tune quantized format to optimize bram utilization. 
-Remake csim test file properly. Have the possibility of running different tests.
-Add testing of 1-directional ring
-Feature: have unlimited integration steps until we tell it to stop.
+1: Make sure edges are weighted, Optimize Edge size
+2: Optimize the DSP usage and code readability using a single function for all rk stages
+3: Optimize HP port usage
+4: Check parameter ranges and make sure they make sense. Make sure the "epsilon and dt" problem is fixed.
+5: Fine-tune quantized format to optimize bram utilization. 
+6: Remake csim test file properly. Have the possibility of running different tests.
+7: Add testing of 1-directional ring
+8: Feature: have unlimited integration steps until we tell it to stop.
+9: Fix incoming_sum Q8.24 overflow and (fixed_t)out_degrees 8-bit truncation on high-degree neurons
+10: Optimize RNG bit-widths and CLT scaling in rng.hpp (preserve precision and trim DSP/timing cost)
